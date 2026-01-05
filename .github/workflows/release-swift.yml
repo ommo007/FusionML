@@ -1,0 +1,57 @@
+# Create GitHub Release for Swift Package Manager
+
+name: Release Swift Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Swift package
+        run: swift build -c release
+      
+      - name: Run tests
+        run: swift test
+      
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ steps.version.outputs.version }}';
+            const { data: release } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${version}`,
+              name: `FusionML v${version}`,
+              body: `## FusionML v${version}
+
+### Swift Package Manager
+Add to your \`Package.swift\`:
+\`\`\`swift
+dependencies: [
+    .package(url: "https://github.com/ommo007/FusionML.git", from: "${version}")
+]
+\`\`\`
+
+### Python
+\`\`\`bash
+pip install fusionml==${version}
+\`\`\`
+
+See [CHANGELOG.md](CHANGELOG.md) for details.`,
+              draft: false,
+              prerelease: version.includes('alpha') || version.includes('beta')
+            });
+            
+            console.log(`Created release: ${release.html_url}`);

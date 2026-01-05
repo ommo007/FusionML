@@ -1,1 +1,86 @@
-/.DS_Store
+# FusionML CI/CD
+
+# Build
+.build/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyPI upload artifacts
+.pypirc
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+venv_*/
+.python-version
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-*
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Metal compiled
+*.metallib
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Misc
+.env
+.env.local
+*.bak
+tmp/
+temp/

@@ -1,0 +1,124 @@
+# Spam PR Prevention Workflow
+# Prevents spam PRs from first-time contributors (Apna College video issue)
+
+name: PR Spam Prevention
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize]
+
+jobs:
+  check-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Check if first-time contributor
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const author = context.payload.pull_request.user.login;
+            
+            // Check if user has prior contributions
+            const { data: pulls } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'all',
+              per_page: 100
+            });
+            
+            const priorPRs = pulls.filter(pr => 
+              pr.user.login === author && 
+              pr.number !== context.payload.pull_request.number
+            );
+            
+            // Check for spam indicators
+            const prTitle = context.payload.pull_request.title.toLowerCase();
+            const prBody = context.payload.pull_request.body?.toLowerCase() || '';
+            
+            const spamKeywords = [
+              'hacktoberfest', 'first contribution', 'add my name',
+              'update readme', 'fix typo', 'minor fix', 'small change'
+            ];
+            
+            const isSpamLikely = spamKeywords.some(keyword => 
+              prTitle.includes(keyword) || prBody.includes(keyword)
+            );
+            
+            const isFirstTime = priorPRs.length === 0;
+            
+            core.setOutput('is_first_time', isFirstTime);
+            core.setOutput('is_spam_likely', isSpamLikely);
+            core.setOutput('prior_prs', priorPRs.length);
+
+      - name: Add review label for first-time contributors
+        if: steps.check.outputs.is_first_time == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              labels: ['needs-review', 'first-time-contributor']
+            });
+
+      - name: Comment on suspected spam
+        if: steps.check.outputs.is_first_time == 'true' && steps.check.outputs.is_spam_likely == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `👋 Hi @${context.payload.pull_request.user.login}!
+
+            Thank you for your interest in FusionML. This PR has been flagged for manual review.
+
+            **Before your PR can be merged:**
+            - Please ensure your changes are meaningful and add value
+            - Trivial changes (typo fixes, formatting) may not be accepted
+            - Read our [CONTRIBUTING.md](CONTRIBUTING.md) guidelines
+
+            A maintainer will review your PR soon. 🙏`
+            });
+
+      - name: Auto-close obvious spam
+        if: steps.check.outputs.is_first_time == 'true' && steps.check.outputs.is_spam_likely == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prBody = context.payload.pull_request.body?.toLowerCase() || '';
+            const prTitle = context.payload.pull_request.title.toLowerCase();
+            
+            // Obvious spam patterns
+            const obviousSpam = [
+              'add my name to contributors',
+              'added myself',
+              'hacktoberfest spam'
+            ];
+            
+            const isObviousSpam = obviousSpam.some(pattern => 
+              prTitle.includes(pattern) || prBody.includes(pattern)
+            );
+            
+            if (isObviousSpam) {
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                state: 'closed'
+              });
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: '🚫 This PR has been automatically closed as spam. Please read our contribution guidelines before submitting.'
+              });
+            }

@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fusionml"
-version = "0.1.0"
+version = "0.1.0.post1"
 description = "High-Performance ML Framework for Apple Silicon"
 readme = "README.md"
 license = {text = "MIT"}
+authors = [{name = "Om Mohite", email = "om.mohite@vit.edu.in"}]
 requires-python = ">=3.8"
 dependencies = ["numpy>=1.20.0"]
 

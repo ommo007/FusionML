@@ -1,0 +1,80 @@
+# CI - Run tests on every PR and push
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Python tests
+  test-python:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        working-directory: python
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pytest
+          pip install -e .
+      
+      - name: Run Python tests
+        working-directory: python
+        run: |
+          python -c "import fusionml as fml; fml.init()"
+          python examples/quickstart.py
+
+  # Swift tests
+  test-swift:
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Swift package
+        run: swift build
+      
+      - name: Run Swift tests
+        run: swift test
+      
+      - name: Run examples
+        run: |
+          swift run QuickStart
+
+  # Lint Python
+  lint-python:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install linters
+        run: pip install black flake8 mypy
+      
+      - name: Check formatting
+        working-directory: python
+        run: black --check fusionml/
+        continue-on-error: true
+      
+      - name: Lint with flake8
+        working-directory: python
+        run: flake8 fusionml/ --max-line-length=100 --ignore=E501,W503
+        continue-on-error: true

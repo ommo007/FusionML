@@ -18,7 +18,7 @@ FusionML delivers PyTorch-like ease of use with a unique advantage: **intelligen
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/FusionML.git", from: "0.1.0")
+    .package(url: "https://github.com/ommo007/FusionML.git", from: "0.1.0")
 ]
 ```
 

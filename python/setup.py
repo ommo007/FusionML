@@ -6,12 +6,12 @@ from setuptools import setup, find_packages
 
 setup(
     name="fusionml",
-    version="0.1.0",
+    version="0.1.0.post1",
     description="High-Performance ML Framework for Apple Silicon with GPU+CPU parallel execution",
     long_description=open("README.md").read() if __import__("os").path.exists("README.md") else "",
     long_description_content_type="text/markdown",
-    author="FusionML Team",
-    author_email="fusionml@example.com",
+    author="Om Mohite",
+    author_email="om.mohite@vit.edu.in",
     url="https://github.com/yourname/fusionml",
     packages=find_packages(),
     python_requires=">=3.8",
