@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fusionml"
+version = "0.1.0"
+description = "High-Performance ML Framework for Apple Silicon"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+dependencies = ["numpy>=1.20.0"]
+
+[project.optional-dependencies]
+metal = ["pyobjc-framework-Metal>=9.0"]
+dev = ["pytest", "black", "mypy"]
+
+[tool.setuptools.packages.find]
+where = ["."]
