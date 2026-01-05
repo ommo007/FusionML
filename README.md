@@ -1,10 +1,8 @@
 # FusionML
 
-[![CI](https://github.com/ommo007/FusionML/actions/workflows/ci.yml/badge.svg)](https://github.com/ommo007/FusionML/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/fusionml?color=blue)](https://pypi.org/project/fusionml/)
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2FM2%2FM3-black.svg)](https://www.apple.com/mac/)
 
 **High-Performance Machine Learning Framework for Apple Silicon**
 
