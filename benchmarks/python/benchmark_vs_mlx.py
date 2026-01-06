@@ -22,15 +22,21 @@ def benchmark_fusionml(sizes, iterations=10):
         a = fml.rand(size, size)
         b = fml.rand(size, size)
         
+        # Force tensors to be ready
+        a.eval()
+        b.eval()
+        
         # Warmup
         for _ in range(3):
-            _ = a @ b
+            c = a @ b
+            c.eval()  # Force GPU computation
         
         # Benchmark
         times = []
         for _ in range(iterations):
             start = time.perf_counter()
-            _ = a @ b
+            c = a @ b
+            c.eval()  # Force GPU computation
             end = time.perf_counter()
             times.append((end - start) * 1000)
         
@@ -108,11 +114,13 @@ def benchmark_training_fusionml(batch_size=32, hidden=256, epochs=100):
     for _ in range(epochs):
         x = fml.rand(batch_size, 784)
         x.requires_grad = True
+        x.eval()
         y = fml.Tensor([i % 10 for i in range(batch_size)])
         
         start = time.perf_counter()
         out = model(x)
         loss = fml.nn.functional.cross_entropy(out, y)
+        loss.eval()  # Force computation
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()

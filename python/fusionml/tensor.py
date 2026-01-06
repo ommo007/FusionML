@@ -1,227 +1,623 @@
 """
-Tensor - Core tensor class with GPU+CPU intelligent routing
+FusionML Tensor - MLX-Native Implementation
+Maximum performance by keeping data on GPU
 """
 
 import numpy as np
 from typing import Union, List, Optional, Tuple
-from ._metal import HAS_METAL
 
-ArrayLike = Union[np.ndarray, List, float, int]
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
+    mx = None
+
+ArrayLike = Union[np.ndarray, List, float, int, 'mx.array'] if HAS_MLX else Union[np.ndarray, List, float, int]
+
 
 class Tensor:
     """
-    FusionML Tensor with automatic GPU+CPU routing
+    FusionML Tensor with MLX-native storage for maximum GPU performance
+    
+    Data is stored on GPU (MLX) by default for large tensors.
+    Small tensors use numpy for minimal overhead.
+    
+    Key features:
+    - Lazy evaluation: operations don't execute until .eval() or .numpy
+    - Automatic backend selection based on size
+    - Full autograd support
     """
     
-    def __init__(self, data: ArrayLike, requires_grad: bool = False):
-        if isinstance(data, Tensor):
-            self._data = data._data.copy()
-        elif isinstance(data, np.ndarray):
-            self._data = data.astype(np.float32)
-        else:
-            self._data = np.array(data, dtype=np.float32)
-        
+    # Threshold for using GPU (elements)
+    GPU_THRESHOLD = 100_000  # ~316x316 matrix
+    
+    def __init__(self, data: ArrayLike, requires_grad: bool = False, _mlx_data=None):
         self.requires_grad = requires_grad
-        self.grad: Optional['Tensor'] = None
-        self._grad_fn = None
-        self._ctx = None  # For backward
+        self._ctx = None  # For autograd
+        self.grad = None
+        
+        if _mlx_data is not None:
+            # Direct MLX array (internal use)
+            self._mlx = _mlx_data
+            self._np = None
+            self._on_gpu = True
+        elif HAS_MLX and isinstance(data, mx.array):
+            self._mlx = data
+            self._np = None
+            self._on_gpu = True
+        elif isinstance(data, np.ndarray):
+            if HAS_MLX and data.size >= self.GPU_THRESHOLD:
+                self._mlx = mx.array(data.astype(np.float32))
+                self._np = None
+                self._on_gpu = True
+            else:
+                self._np = data.astype(np.float32)
+                self._mlx = None
+                self._on_gpu = False
+        elif isinstance(data, (list, tuple)):
+            arr = np.array(data, dtype=np.float32)
+            if HAS_MLX and arr.size >= self.GPU_THRESHOLD:
+                self._mlx = mx.array(arr)
+                self._np = None
+                self._on_gpu = True
+            else:
+                self._np = arr
+                self._mlx = None
+                self._on_gpu = False
+        elif isinstance(data, (int, float)):
+            self._np = np.array(data, dtype=np.float32)
+            self._mlx = None
+            self._on_gpu = False
+        elif isinstance(data, Tensor):
+            if data._on_gpu:
+                self._mlx = data._mlx
+                self._np = None
+                self._on_gpu = True
+            else:
+                self._np = data._np.copy()
+                self._mlx = None
+                self._on_gpu = False
+        else:
+            self._np = np.array(data, dtype=np.float32)
+            self._mlx = None
+            self._on_gpu = False
     
     @property
-    def shape(self) -> Tuple[int, ...]:
-        return self._data.shape
-    
-    @property  
-    def ndim(self) -> int:
-        return self._data.ndim
+    def data(self):
+        """Get data as MLX array if on GPU, numpy otherwise"""
+        if self._on_gpu:
+            return self._mlx
+        return self._np
     
     @property
-    def dtype(self):
-        return self._data.dtype
-    
-    def __len__(self) -> int:
-        return len(self._data)
-    
-    def numel(self) -> int:
-        """Number of elements"""
-        return self._data.size
-    
     def numpy(self) -> np.ndarray:
-        """Convert to numpy array"""
-        return self._data.copy()
+        """Get data as numpy array (forces GPU sync if needed)"""
+        if self._np is not None:
+            return self._np
+        if self._mlx is not None:
+            mx.eval(self._mlx)
+            self._np = np.array(self._mlx)
+            return self._np
+        return np.array([])
     
-    def item(self) -> float:
-        """Get scalar value"""
-        return float(self._data.flat[0])
+    def eval(self) -> 'Tensor':
+        """Force GPU evaluation"""
+        if self._on_gpu and self._mlx is not None:
+            mx.eval(self._mlx)
+        return self
     
-    def __repr__(self) -> str:
-        return f"Tensor({self._data}, requires_grad={self.requires_grad})"
+    @property
+    def shape(self) -> Tuple:
+        if self._on_gpu:
+            return tuple(self._mlx.shape)
+        return self._np.shape
     
-    # ===== Factory Methods =====
+    @property
+    def ndim(self) -> int:
+        if self._on_gpu:
+            return len(self._mlx.shape)
+        return self._np.ndim
     
-    @staticmethod
-    def zeros(*shape) -> 'Tensor':
-        if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
-            shape = tuple(shape[0])
-        return Tensor(np.zeros(shape, dtype=np.float32))
+    @property
+    def size(self) -> int:
+        if self._on_gpu:
+            s = 1
+            for d in self._mlx.shape:
+                s *= d
+            return s
+        return self._np.size
     
-    @staticmethod
-    def ones(*shape) -> 'Tensor':
-        if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
-            shape = tuple(shape[0])
-        return Tensor(np.ones(shape, dtype=np.float32))
+    @property 
+    def dtype(self):
+        if self._on_gpu:
+            return self._mlx.dtype
+        return self._np.dtype
     
-    @staticmethod
-    def rand(*shape) -> 'Tensor':
-        if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
-            shape = tuple(shape[0])
-        return Tensor(np.random.rand(*shape).astype(np.float32))
+    def to_gpu(self) -> 'Tensor':
+        """Move tensor to GPU"""
+        if self._on_gpu or not HAS_MLX:
+            return self
+        t = Tensor.__new__(Tensor)
+        t._mlx = mx.array(self._np)
+        t._np = None
+        t._on_gpu = True
+        t.requires_grad = self.requires_grad
+        t._ctx = None
+        t.grad = None
+        return t
     
-    @staticmethod
-    def randn(*shape) -> 'Tensor':
-        if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
-            shape = tuple(shape[0])
-        return Tensor(np.random.randn(*shape).astype(np.float32))
+    def to_cpu(self) -> 'Tensor':
+        """Move tensor to CPU"""
+        if not self._on_gpu:
+            return self
+        t = Tensor.__new__(Tensor)
+        mx.eval(self._mlx)
+        t._np = np.array(self._mlx)
+        t._mlx = None
+        t._on_gpu = False
+        t.requires_grad = self.requires_grad
+        t._ctx = None
+        t.grad = None
+        return t
     
-    @staticmethod
-    def eye(n: int) -> 'Tensor':
-        return Tensor(np.eye(n, dtype=np.float32))
+    def __repr__(self):
+        if self._on_gpu:
+            return f"Tensor(shape={self.shape}, device='gpu')"
+        return f"Tensor({self._np})"
     
-    @staticmethod  
-    def from_numpy(arr: np.ndarray) -> 'Tensor':
-        return Tensor(arr)
-
     # ===== Operations =====
     
     def __add__(self, other: Union['Tensor', float]) -> 'Tensor':
-        other_data = other._data if isinstance(other, Tensor) else other
-        result = Tensor(self._data + other_data)
+        if isinstance(other, Tensor):
+            if self._on_gpu or other._on_gpu:
+                # GPU path
+                a = self._mlx if self._on_gpu else mx.array(self._np)
+                b = other._mlx if other._on_gpu else mx.array(other._np)
+                result = Tensor.__new__(Tensor)
+                result._mlx = a + b
+                result._np = None
+                result._on_gpu = True
+            else:
+                result = Tensor(self._np + other._np)
+        else:
+            if self._on_gpu:
+                result = Tensor.__new__(Tensor)
+                result._mlx = self._mlx + other
+                result._np = None
+                result._on_gpu = True
+            else:
+                result = Tensor(self._np + other)
         
-        if self.requires_grad or (isinstance(other, Tensor) and other.requires_grad):
-            result.requires_grad = True
-            result._ctx = ('add', self, other)
+        result.requires_grad = self.requires_grad or (isinstance(other, Tensor) and other.requires_grad)
+        result._ctx = ('add', self, other) if result.requires_grad else None
+        result.grad = None
         return result
     
     def __radd__(self, other):
         return self.__add__(other)
     
     def __sub__(self, other: Union['Tensor', float]) -> 'Tensor':
-        other_data = other._data if isinstance(other, Tensor) else other
-        result = Tensor(self._data - other_data)
+        if isinstance(other, Tensor):
+            if self._on_gpu or other._on_gpu:
+                a = self._mlx if self._on_gpu else mx.array(self._np)
+                b = other._mlx if other._on_gpu else mx.array(other._np)
+                result = Tensor.__new__(Tensor)
+                result._mlx = a - b
+                result._np = None
+                result._on_gpu = True
+            else:
+                result = Tensor(self._np - other._np)
+        else:
+            if self._on_gpu:
+                result = Tensor.__new__(Tensor)
+                result._mlx = self._mlx - other
+                result._np = None
+                result._on_gpu = True
+            else:
+                result = Tensor(self._np - other)
         
-        if self.requires_grad or (isinstance(other, Tensor) and other.requires_grad):
-            result.requires_grad = True
-            result._ctx = ('sub', self, other)
+        result.requires_grad = self.requires_grad or (isinstance(other, Tensor) and other.requires_grad)
+        result._ctx = ('sub', self, other) if result.requires_grad else None
+        result.grad = None
         return result
     
     def __mul__(self, other: Union['Tensor', float]) -> 'Tensor':
-        other_data = other._data if isinstance(other, Tensor) else other
-        result = Tensor(self._data * other_data)
+        if isinstance(other, Tensor):
+            if self._on_gpu or other._on_gpu:
+                a = self._mlx if self._on_gpu else mx.array(self._np)
+                b = other._mlx if other._on_gpu else mx.array(other._np)
+                result = Tensor.__new__(Tensor)
+                result._mlx = a * b
+                result._np = None
+                result._on_gpu = True
+            else:
+                result = Tensor(self._np * other._np)
+        else:
+            if self._on_gpu:
+                result = Tensor.__new__(Tensor)
+                result._mlx = self._mlx * other
+                result._np = None
+                result._on_gpu = True
+            else:
+                result = Tensor(self._np * other)
         
-        if self.requires_grad or (isinstance(other, Tensor) and other.requires_grad):
-            result.requires_grad = True
-            result._ctx = ('mul', self, other)
+        result.requires_grad = self.requires_grad or (isinstance(other, Tensor) and other.requires_grad)
+        result._ctx = ('mul', self, other) if result.requires_grad else None
+        result.grad = None
         return result
     
     def __rmul__(self, other):
         return self.__mul__(other)
     
     def __truediv__(self, other: Union['Tensor', float]) -> 'Tensor':
-        other_data = other._data if isinstance(other, Tensor) else other
-        return Tensor(self._data / other_data)
-    
-    def __neg__(self) -> 'Tensor':
-        return Tensor(-self._data, requires_grad=self.requires_grad)
-    
-    def __matmul__(self, other: 'Tensor') -> 'Tensor':
-        """Matrix multiplication with intelligent routing"""
-        return matmul(self, other)
-    
-    def sum(self, dim: Optional[int] = None, keepdim: bool = False) -> 'Tensor':
-        result = Tensor(np.sum(self._data, axis=dim, keepdims=keepdim))
-        if self.requires_grad:
-            result.requires_grad = True
-            result._ctx = ('sum', self, dim, keepdim)
+        if isinstance(other, Tensor):
+            if self._on_gpu or other._on_gpu:
+                a = self._mlx if self._on_gpu else mx.array(self._np)
+                b = other._mlx if other._on_gpu else mx.array(other._np)
+                result = Tensor.__new__(Tensor)
+                result._mlx = a / b
+                result._np = None
+                result._on_gpu = True
+            else:
+                result = Tensor(self._np / other._np)
+        else:
+            if self._on_gpu:
+                result = Tensor.__new__(Tensor)
+                result._mlx = self._mlx / other
+                result._np = None
+                result._on_gpu = True
+            else:
+                result = Tensor(self._np / other)
+        
+        result.requires_grad = False
+        result._ctx = None
+        result.grad = None
         return result
     
-    def mean(self, dim: Optional[int] = None, keepdim: bool = False) -> 'Tensor':
-        result = Tensor(np.mean(self._data, axis=dim, keepdims=keepdim))
-        if self.requires_grad:
-            result.requires_grad = True
-            result._ctx = ('mean', self, dim, keepdim)
+    def __neg__(self) -> 'Tensor':
+        if self._on_gpu:
+            result = Tensor.__new__(Tensor)
+            result._mlx = -self._mlx
+            result._np = None
+            result._on_gpu = True
+        else:
+            result = Tensor(-self._np)
+        result.requires_grad = self.requires_grad
+        result._ctx = None
+        result.grad = None
+        return result
+    
+    def __matmul__(self, other: 'Tensor') -> 'Tensor':
+        """Matrix multiplication - always on GPU for best performance"""
+        return matmul(self, other)
+    
+    def __getitem__(self, key):
+        if self._on_gpu:
+            result = Tensor.__new__(Tensor)
+            result._mlx = self._mlx[key]
+            result._np = None
+            result._on_gpu = True
+        else:
+            result = Tensor(self._np[key])
+        result.requires_grad = self.requires_grad
+        result._ctx = None
+        result.grad = None
+        return result
+    
+    # ===== Reduction Operations =====
+    
+    def sum(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
+        if self._on_gpu:
+            result = Tensor.__new__(Tensor)
+            result._mlx = mx.sum(self._mlx, axis=axis, keepdims=keepdims)
+            result._np = None
+            result._on_gpu = True
+        else:
+            result = Tensor(np.sum(self._np, axis=axis, keepdims=keepdims))
+        result.requires_grad = self.requires_grad
+        result._ctx = ('sum', self, axis, keepdims) if result.requires_grad else None
+        result.grad = None
+        return result
+    
+    def mean(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
+        if self._on_gpu:
+            result = Tensor.__new__(Tensor)
+            result._mlx = mx.mean(self._mlx, axis=axis, keepdims=keepdims)
+            result._np = None
+            result._on_gpu = True
+        else:
+            result = Tensor(np.mean(self._np, axis=axis, keepdims=keepdims))
+        result.requires_grad = self.requires_grad
+        result._ctx = ('mean', self, axis, keepdims) if result.requires_grad else None
+        result.grad = None
+        return result
+    
+    def max(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
+        if self._on_gpu:
+            result = Tensor.__new__(Tensor)
+            result._mlx = mx.max(self._mlx, axis=axis, keepdims=keepdims)
+            result._np = None
+            result._on_gpu = True
+        else:
+            result = Tensor(np.max(self._np, axis=axis, keepdims=keepdims))
+        result.requires_grad = False
+        result._ctx = None
+        result.grad = None
+        return result
+    
+    @property
+    def T(self) -> 'Tensor':
+        if self._on_gpu:
+            result = Tensor.__new__(Tensor)
+            result._mlx = self._mlx.T
+            result._np = None
+            result._on_gpu = True
+        else:
+            result = Tensor(self._np.T)
+        result.requires_grad = self.requires_grad
+        result._ctx = None
+        result.grad = None
         return result
     
     def reshape(self, *shape) -> 'Tensor':
         if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
-            shape = tuple(shape[0])
-        return Tensor(self._data.reshape(shape), requires_grad=self.requires_grad)
-    
-    def T(self) -> 'Tensor':
-        """Transpose"""
-        return Tensor(self._data.T, requires_grad=self.requires_grad)
-    
-    def transpose(self, dim0: int, dim1: int) -> 'Tensor':
-        axes = list(range(self.ndim))
-        axes[dim0], axes[dim1] = axes[dim1], axes[dim0]
-        return Tensor(np.transpose(self._data, axes))
-    
-    def detach(self) -> 'Tensor':
-        """Return tensor without gradient tracking"""
-        return Tensor(self._data)
-    
-    def zero_grad(self):
-        """Zero the gradient"""
-        self.grad = None
+            shape = shape[0]
+        if self._on_gpu:
+            result = Tensor.__new__(Tensor)
+            result._mlx = self._mlx.reshape(shape)
+            result._np = None
+            result._on_gpu = True
+        else:
+            result = Tensor(self._np.reshape(shape))
+        result.requires_grad = self.requires_grad
+        result._ctx = None
+        result.grad = None
+        return result
     
     def backward(self, grad: Optional['Tensor'] = None):
-        """Backward pass"""
         from .autograd import backward
         backward(self, grad)
 
 
-# ===== Core Operations with GPU+CPU Routing =====
+# ===== Matrix Multiplication =====
 
 def matmul(a: Tensor, b: Tensor) -> Tensor:
     """
-    Matrix multiplication with intelligent GPU+CPU routing
-    This is the core innovation - splits work for optimal performance
+    Matrix multiplication - GPU-native for maximum performance
+    
+    Uses MLX GPU for all sizes since data is already on GPU.
     """
-    M, K = a.shape[0], a.shape[1] if a.ndim > 1 else 1
-    N = b.shape[1] if b.ndim > 1 else 1
-    
-    size = M * K * N
-    
-    # Intelligent routing based on size
-    if size < 100_000:
-        # Small: CPU is faster (no GPU overhead)
-        result = np.matmul(a._data, b._data)
-    elif HAS_METAL and size > 1_000_000:
-        # Large: GPU+CPU parallel (our innovation!)
-        # For now, use numpy (full Metal impl requires more setup)
-        result = np.matmul(a._data, b._data)
+    if HAS_MLX:
+        a_mlx = a._mlx if a._on_gpu else mx.array(a._np)
+        b_mlx = b._mlx if b._on_gpu else mx.array(b._np)
+        
+        result = Tensor.__new__(Tensor)
+        result._mlx = a_mlx @ b_mlx
+        result._np = None
+        result._on_gpu = True
     else:
-        # Medium: GPU only
-        result = np.matmul(a._data, b._data)
+        # CPU fallback
+        a_np = a._np if not a._on_gpu else a.numpy
+        b_np = b._np if not b._on_gpu else b.numpy
+        result = Tensor(np.matmul(a_np, b_np))
     
-    out = Tensor(result)
-    if a.requires_grad or b.requires_grad:
-        out.requires_grad = True
-        out._ctx = ('matmul', a, b)
-    return out
+    result.requires_grad = a.requires_grad or b.requires_grad
+    result._ctx = ('matmul', a, b) if result.requires_grad else None
+    result.grad = None
+    return result
 
 
-# ===== Convenience functions =====
+# ===== Activation Functions =====
 
-def zeros(*shape) -> Tensor:
-    return Tensor.zeros(*shape)
+def relu(x: Tensor) -> Tensor:
+    """ReLU activation"""
+    if x._on_gpu:
+        result = Tensor.__new__(Tensor)
+        result._mlx = mx.maximum(x._mlx, 0)
+        result._np = None
+        result._on_gpu = True
+    else:
+        result = Tensor(np.maximum(x._np, 0))
+    result.requires_grad = x.requires_grad
+    result._ctx = ('relu', x) if result.requires_grad else None
+    result.grad = None
+    return result
 
-def ones(*shape) -> Tensor:
-    return Tensor.ones(*shape)
 
-def rand(*shape) -> Tensor:
-    return Tensor.rand(*shape)
+def sigmoid(x: Tensor) -> Tensor:
+    """Sigmoid activation"""
+    if x._on_gpu:
+        result = Tensor.__new__(Tensor)
+        result._mlx = mx.sigmoid(x._mlx)
+        result._np = None
+        result._on_gpu = True
+    else:
+        result = Tensor(1 / (1 + np.exp(-x._np)))
+    result.requires_grad = x.requires_grad
+    result._ctx = ('sigmoid', x) if result.requires_grad else None
+    result.grad = None
+    return result
 
-def randn(*shape) -> Tensor:
-    return Tensor.randn(*shape)
 
-def eye(n: int) -> Tensor:
-    return Tensor.eye(n)
+def softmax(x: Tensor, axis: int = -1) -> Tensor:
+    """Softmax activation"""
+    if x._on_gpu:
+        result = Tensor.__new__(Tensor)
+        result._mlx = mx.softmax(x._mlx, axis=axis)
+        result._np = None
+        result._on_gpu = True
+    else:
+        exp_x = np.exp(x._np - np.max(x._np, axis=axis, keepdims=True))
+        result = Tensor(exp_x / np.sum(exp_x, axis=axis, keepdims=True))
+    result.requires_grad = x.requires_grad
+    result._ctx = ('softmax', x, axis) if result.requires_grad else None
+    result.grad = None
+    return result
+
+
+def log_softmax(x: Tensor, axis: int = -1) -> Tensor:
+    """Log-Softmax for numerical stability"""
+    if x._on_gpu:
+        result = Tensor.__new__(Tensor)
+        # log_softmax = x - log(sum(exp(x)))
+        result._mlx = x._mlx - mx.logsumexp(x._mlx, axis=axis, keepdims=True)
+        result._np = None
+        result._on_gpu = True
+    else:
+        max_x = np.max(x._np, axis=axis, keepdims=True)
+        log_sum_exp = max_x + np.log(np.sum(np.exp(x._np - max_x), axis=axis, keepdims=True))
+        result = Tensor(x._np - log_sum_exp)
+    result.requires_grad = x.requires_grad
+    result._ctx = ('log_softmax', x, axis) if result.requires_grad else None
+    result.grad = None
+    return result
+
+
+def exp(x: Tensor) -> Tensor:
+    """Exponential"""
+    if x._on_gpu:
+        result = Tensor.__new__(Tensor)
+        result._mlx = mx.exp(x._mlx)
+        result._np = None
+        result._on_gpu = True
+    else:
+        result = Tensor(np.exp(x._np))
+    result.requires_grad = x.requires_grad
+    result._ctx = ('exp', x) if result.requires_grad else None
+    result.grad = None
+    return result
+
+
+def log(x: Tensor) -> Tensor:
+    """Natural logarithm"""
+    if x._on_gpu:
+        result = Tensor.__new__(Tensor)
+        result._mlx = mx.log(x._mlx)
+        result._np = None
+        result._on_gpu = True
+    else:
+        result = Tensor(np.log(x._np))
+    result.requires_grad = x.requires_grad
+    result._ctx = ('log', x) if result.requires_grad else None
+    result.grad = None
+    return result
+
+
+# ===== Creation Functions =====
+
+def zeros(*shape, requires_grad: bool = False) -> Tensor:
+    """Create tensor of zeros"""
+    if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
+        shape = tuple(shape[0])
+    size = 1
+    for d in shape:
+        size *= d
+    if HAS_MLX and size >= Tensor.GPU_THRESHOLD:
+        t = Tensor.__new__(Tensor)
+        t._mlx = mx.zeros(shape)
+        t._np = None
+        t._on_gpu = True
+    else:
+        t = Tensor(np.zeros(shape, dtype=np.float32))
+    t.requires_grad = requires_grad
+    t._ctx = None
+    t.grad = None
+    return t
+
+
+def ones(*shape, requires_grad: bool = False) -> Tensor:
+    """Create tensor of ones"""
+    if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
+        shape = tuple(shape[0])
+    size = 1
+    for d in shape:
+        size *= d
+    if HAS_MLX and size >= Tensor.GPU_THRESHOLD:
+        t = Tensor.__new__(Tensor)
+        t._mlx = mx.ones(shape)
+        t._np = None
+        t._on_gpu = True
+    else:
+        t = Tensor(np.ones(shape, dtype=np.float32))
+    t.requires_grad = requires_grad
+    t._ctx = None
+    t.grad = None
+    return t
+
+
+def rand(*shape, requires_grad: bool = False) -> Tensor:
+    """Create tensor with random values [0, 1)"""
+    if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
+        shape = tuple(shape[0])
+    size = 1
+    for d in shape:
+        size *= d
+    if HAS_MLX and size >= Tensor.GPU_THRESHOLD:
+        t = Tensor.__new__(Tensor)
+        t._mlx = mx.random.uniform(shape=shape)
+        t._np = None
+        t._on_gpu = True
+    else:
+        t = Tensor(np.random.rand(*shape).astype(np.float32))
+    t.requires_grad = requires_grad
+    t._ctx = None
+    t.grad = None
+    return t
+
+
+def randn(*shape, requires_grad: bool = False) -> Tensor:
+    """Create tensor with random normal values"""
+    if len(shape) == 1 and isinstance(shape[0], (list, tuple)):
+        shape = tuple(shape[0])
+    size = 1
+    for d in shape:
+        size *= d
+    if HAS_MLX and size >= Tensor.GPU_THRESHOLD:
+        t = Tensor.__new__(Tensor)
+        t._mlx = mx.random.normal(shape=shape)
+        t._np = None
+        t._on_gpu = True
+    else:
+        t = Tensor(np.random.randn(*shape).astype(np.float32))
+    t.requires_grad = requires_grad
+    t._ctx = None
+    t.grad = None
+    return t
+
+
+
+# ===== Utility =====
+
+def eye(n: int, requires_grad: bool = False) -> Tensor:
+    """Create identity matrix"""
+    if HAS_MLX and n * n >= Tensor.GPU_THRESHOLD:
+        t = Tensor.__new__(Tensor)
+        t._mlx = mx.eye(n)
+        t._np = None
+        t._on_gpu = True
+    else:
+        t = Tensor(np.eye(n, dtype=np.float32))
+    t.requires_grad = requires_grad
+    t._ctx = None
+    t.grad = None
+    return t
+
+
+def batch_eval(*tensors: Tensor):
+    """Evaluate multiple tensors in a single GPU sync"""
+    if HAS_MLX:
+        mlx_arrays = [t._mlx for t in tensors if t._on_gpu and t._mlx is not None]
+        if mlx_arrays:
+            mx.eval(*mlx_arrays)
+
+
+def device_info():
+    """Get device information"""
+    if HAS_MLX:
+        return {
+            "backend": "MLX-native",
+            "gpu": True,
+            "gpu_threshold": Tensor.GPU_THRESHOLD,
+        }
+    return {"backend": "numpy", "gpu": False}
