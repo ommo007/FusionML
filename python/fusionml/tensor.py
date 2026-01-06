@@ -30,7 +30,8 @@ class Tensor:
     """
     
     # Threshold for using GPU (elements)
-    GPU_THRESHOLD = 100_000  # ~316x316 matrix
+    # Matches matmul threshold of 1500x1500 for consistency
+    GPU_THRESHOLD = 1500 * 1500  # ~2.25M elements
     
     def __init__(self, data: ArrayLike, requires_grad: bool = False, _mlx_data=None):
         self.requires_grad = requires_grad
@@ -384,11 +385,33 @@ class Tensor:
 
 def matmul(a: Tensor, b: Tensor) -> Tensor:
     """
-    Matrix multiplication - GPU-native for maximum performance
+    Matrix multiplication with HYBRID strategy for maximum performance
     
-    Uses MLX GPU for all sizes since data is already on GPU.
+    - Small matrices (<1500): NumPy (Accelerate BLAS) - no GPU overhead
+    - Large matrices (>=1500): MLX GPU - maximum throughput
+    
+    This gives us the best of both worlds!
     """
-    if HAS_MLX:
+    M = a.shape[0]
+    K = a.shape[1] if len(a.shape) > 1 else 1
+    N = b.shape[1] if len(b.shape) > 1 else 1
+    min_dim = min(M, K, N)
+    
+    # Use NumPy for small/medium matrices (GPU overhead not worth it)
+    if min_dim < 1500:
+        # Get numpy arrays
+        a_np = a.numpy if a._on_gpu else a._np
+        b_np = b.numpy if b._on_gpu else b._np
+        
+        # NumPy matmul (uses Accelerate BLAS on macOS)
+        result_np = np.matmul(a_np, b_np)
+        
+        result = Tensor.__new__(Tensor)
+        result._np = result_np
+        result._mlx = None
+        result._on_gpu = False
+    elif HAS_MLX:
+        # Large matrices: Use MLX GPU
         a_mlx = a._mlx if a._on_gpu else mx.array(a._np)
         b_mlx = b._mlx if b._on_gpu else mx.array(b._np)
         
