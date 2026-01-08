@@ -9,7 +9,6 @@ import ctypes
 # Try to import Metal via PyObjC
 try:
     import Metal
-    import Accelerate
     HAS_METAL = True
 except ImportError:
     HAS_METAL = False
@@ -106,3 +105,105 @@ def _get_matmul_kernel():
         library = device.newLibraryWithSource_options_error_(source, options, None)[0]
         _matmul_kernel = library.newFunctionWithName_("matmul")
     return _matmul_kernel
+
+
+def metal_matmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """
+    Perform matrix multiplication on GPU using Metal
+    
+    Args:
+        a: numpy array of shape (M, K)
+        b: numpy array of shape (K, N)
+    
+    Returns:
+        numpy array of shape (M, N)
+    """
+    if not HAS_METAL:
+        return np.matmul(a, b)
+    
+    device = get_device()
+    kernel = _get_matmul_kernel()
+    
+    if kernel is None:
+        return np.matmul(a, b)
+    
+    # Ensure float32 and contiguous
+    a = np.ascontiguousarray(a, dtype=np.float32)
+    b = np.ascontiguousarray(b, dtype=np.float32)
+    
+    M, K = a.shape
+    K2, N = b.shape
+    assert K == K2, f"Shape mismatch: {a.shape} vs {b.shape}"
+    
+    # Create output array
+    c = np.zeros((M, N), dtype=np.float32)
+    
+    # Create Metal buffers using tobytes()
+    buffer_a = device.newBufferWithBytes_length_options_(
+        a.tobytes(),
+        a.nbytes,
+        Metal.MTLResourceStorageModeShared
+    )
+    buffer_b = device.newBufferWithBytes_length_options_(
+        b.tobytes(),
+        b.nbytes,
+        Metal.MTLResourceStorageModeShared
+    )
+    buffer_c = device.newBufferWithLength_options_(
+        c.nbytes,
+        Metal.MTLResourceStorageModeShared
+    )
+    
+    # Create dimension buffers
+    m_val = np.array([M], dtype=np.uint32)
+    n_val = np.array([N], dtype=np.uint32)
+    k_val = np.array([K], dtype=np.uint32)
+    
+    buffer_m = device.newBufferWithBytes_length_options_(
+        m_val.tobytes(), 4, Metal.MTLResourceStorageModeShared
+    )
+    buffer_n = device.newBufferWithBytes_length_options_(
+        n_val.tobytes(), 4, Metal.MTLResourceStorageModeShared
+    )
+    buffer_k = device.newBufferWithBytes_length_options_(
+        k_val.tobytes(), 4, Metal.MTLResourceStorageModeShared
+    )
+    
+    # Create pipeline state
+    pipeline_state = device.newComputePipelineStateWithFunction_error_(kernel, None)[0]
+    
+    # Create command buffer and encoder
+    command_buffer = _command_queue.commandBuffer()
+    encoder = command_buffer.computeCommandEncoder()
+    
+    encoder.setComputePipelineState_(pipeline_state)
+    encoder.setBuffer_offset_atIndex_(buffer_a, 0, 0)
+    encoder.setBuffer_offset_atIndex_(buffer_b, 0, 1)
+    encoder.setBuffer_offset_atIndex_(buffer_c, 0, 2)
+    encoder.setBuffer_offset_atIndex_(buffer_m, 0, 3)
+    encoder.setBuffer_offset_atIndex_(buffer_n, 0, 4)
+    encoder.setBuffer_offset_atIndex_(buffer_k, 0, 5)
+    
+    # Dispatch threads
+    threads_per_group = Metal.MTLSize(16, 16, 1)
+    num_groups = Metal.MTLSize(
+        (N + 15) // 16,
+        (M + 15) // 16,
+        1
+    )
+    
+    encoder.dispatchThreadgroups_threadsPerThreadgroup_(num_groups, threads_per_group)
+    encoder.endEncoding()
+    
+    # Execute and wait
+    command_buffer.commit()
+    command_buffer.waitUntilCompleted()
+    
+    # Read result from GPU buffer
+    # PyObjC returns objc.varlist of bytes, join them
+    contents = buffer_c.contents()
+    length = buffer_c.length()
+    raw_bytes = b''.join(contents[:length])
+    result = np.frombuffer(raw_bytes, dtype=np.float32).reshape((M, N)).copy()
+    
+    return result

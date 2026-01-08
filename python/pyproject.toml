@@ -1,10 +1,11 @@
-[build-system]
+
+
 requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "fusionml"
-version = "0.1.1"
+version = "0.2.0"
 description = "High-Performance ML Framework for Apple Silicon"
 readme = "README.md"
 license = {text = "MIT"}
