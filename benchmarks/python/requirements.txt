@@ -1,2 +1,5 @@
 numpy>=1.20.0
-torch>=2.0.0  # Optional, for comparison
+matplotlib>=3.5.0
+# Optional for comparison benchmarks:
+# torch>=2.0.0
+# mlx>=0.20.0
