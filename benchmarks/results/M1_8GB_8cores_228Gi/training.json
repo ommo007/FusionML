@@ -1,0 +1,23 @@
+{
+  "benchmark": "training",
+  "system_info": {
+    "processor": "arm",
+    "machine": "arm64",
+    "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
+    "python_version": "3.13.3",
+    "date": "2026-01-08T18:06:19.993317",
+    "cpu_brand": "Apple M1",
+    "ram_gb": 8,
+    "gpu_name": "Apple M1",
+    "cpu_cores": 8,
+    "storage_total": "228Gi"
+  },
+  "date": "2026-01-08T18:06:27.515300",
+  "results": {
+    "batch_size": 32,
+    "hidden_size": 256,
+    "mean_ms": 0.8353787480155006,
+    "min_ms": 0.5834579933434725,
+    "throughput_samples_per_sec": 38305.97806805379
+  }
+}
