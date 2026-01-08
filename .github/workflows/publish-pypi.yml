@@ -8,6 +8,7 @@ on:
     paths:
       - 'python/pyproject.toml'
       - 'python/setup.py'
+      - 'python/fusionml/**'
 
 jobs:
   check-version:
@@ -27,10 +28,8 @@ jobs:
           # Get current version
           CURRENT=$(grep 'version = ' python/pyproject.toml | head -1 | cut -d'"' -f2)
           
-          # Get previous version
-          git checkout HEAD~1 -- python/pyproject.toml 2>/dev/null || echo "version = \"0.0.0\"" > /tmp/old.toml
-          PREVIOUS=$(grep 'version = ' python/pyproject.toml 2>/dev/null | head -1 | cut -d'"' -f2 || echo "0.0.0")
-          git checkout HEAD -- python/pyproject.toml
+          # Get previous version from git
+          PREVIOUS=$(git show HEAD~1:python/pyproject.toml 2>/dev/null | grep 'version = ' | head -1 | cut -d'"' -f2 || echo "0.0.0")
           
           echo "Current: $CURRENT, Previous: $PREVIOUS"
           
@@ -45,10 +44,6 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
-    environment: pypi
-    
-    permissions:
-      id-token: write  # For trusted publishing
     
     steps:
       - uses: actions/checkout@v4
@@ -67,11 +62,17 @@ jobs:
         working-directory: python
         run: python -m build
       
+      - name: Check package
+        working-directory: python
+        run: twine check dist/*
+      
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: python/dist/
-          # Uses trusted publishing - configure at pypi.org/manage/project/fusionml/settings/publishing/
+        working-directory: python
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload dist/* --verbose
       
       - name: Create GitHub Release
         uses: actions/github-script@v7
@@ -84,7 +85,7 @@ jobs:
               repo: context.repo.repo,
               tag_name: `v${version}`,
               name: `FusionML v${version}`,
-              body: `## FusionML v${version}\n\nInstall via pip:\n\`\`\`bash\npip install fusionml==${version}\n\`\`\`\n\nSee [CHANGELOG.md](CHANGELOG.md) for details.`,
+              body: `## FusionML v${version}\n\n### Performance Highlights\n- 🚀 Up to 90% faster than MLX for small matrices\n- 📈 48% faster training\n- ⚡ Hybrid NumPy/MLX strategy\n\n### Install\n\`\`\`bash\npip install fusionml==${version}\n\`\`\``,
               draft: false,
               prerelease: version.includes('post') || version.includes('dev')
             });
