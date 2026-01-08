@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # FusionML Benchmark Runner
-# Easy setup and execution script
+# Easy setup and execution script - Runs ALL benchmarks
 # ============================================================
 
 set -e  # Exit on error
@@ -46,36 +46,70 @@ pip install --quiet numpy matplotlib
 echo "📥 Installing FusionML..."
 pip install --quiet -e "$SCRIPT_DIR/../python"
 
-# Check for MLX (optional)
-if pip show mlx &> /dev/null; then
-    echo "✓ MLX found"
-else
-    echo "ℹ️  MLX not installed (optional for comparison)"
-    echo "   Install with: pip install mlx"
-fi
+# Try to install MLX (optional, may fail on non-Apple Silicon)
+echo "📥 Installing MLX (optional)..."
+pip install --quiet mlx 2>/dev/null || echo "   ℹ️  MLX not available on this system"
 
 # Create results directory
 mkdir -p "$SCRIPT_DIR/results"
 
 echo ""
 echo "============================================================"
-echo "🚀 Running Benchmarks..."
+echo "🚀 Running ALL Benchmarks..."
 echo "============================================================"
 
 cd "$PYTHON_DIR"
 
-# Run main benchmark
+# 1. Run main benchmark (MatMul + Training)
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📊 1/4: Main Benchmark (MatMul + Training)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 python run_benchmark.py
+
+# 2. Run MatMul benchmark
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📊 2/4: Matrix Multiplication Benchmark"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+python benchmark_matmul.py
+
+# 3. Run Training benchmark
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📊 3/4: Training Benchmark"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+python benchmark_training.py
+
+# 4. Run MLX comparison (if MLX is available)
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📊 4/4: FusionML vs MLX Comparison"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if python -c "import mlx" 2>/dev/null; then
+    python benchmark_vs_mlx.py
+else
+    echo "   ⚠️  MLX not installed, skipping comparison"
+    echo "   Install with: pip install mlx"
+fi
+
+# Generate plots
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📈 Generating Comparison Plots..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+python plot_results.py
 
 echo ""
 echo "============================================================"
-echo "✅ Benchmark Complete!"
+echo "✅ ALL BENCHMARKS COMPLETE!"
 echo "============================================================"
 echo ""
 echo "📁 Results saved in: $SCRIPT_DIR/results/"
-echo "📊 View plots: $SCRIPT_DIR/results/benchmark_comparison.png"
-echo "📝 Summary: $SCRIPT_DIR/results/SUMMARY.md"
 echo ""
-echo "To run again: ./run_benchmarks.sh"
-echo "To compare with MLX: python benchmark_vs_mlx.py"
+echo "   📊 benchmark_comparison.png  - Comparison chart"
+echo "   📝 SUMMARY.md                - Summary table"
+echo "   📄 *.json                    - Raw benchmark data"
 echo ""
+echo "To submit results: Create a PR with your JSON file!"
+echo "============================================================"
