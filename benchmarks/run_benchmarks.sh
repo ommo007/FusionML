@@ -40,15 +40,11 @@ source "$VENV_DIR/bin/activate"
 echo ""
 echo "📥 Installing dependencies..."
 pip install --quiet --upgrade pip
-pip install --quiet numpy matplotlib
+pip install --quiet -r "$PYTHON_DIR/requirements.txt"
 
 # Install FusionML from parent directory
 echo "📥 Installing FusionML..."
 pip install --quiet -e "$SCRIPT_DIR/../python"
-
-# Try to install MLX (optional, may fail on non-Apple Silicon)
-echo "📥 Installing MLX (optional)..."
-pip install --quiet mlx 2>/dev/null || echo "   ℹ️  MLX not available on this system"
 
 # Create results directory
 mkdir -p "$SCRIPT_DIR/results"
