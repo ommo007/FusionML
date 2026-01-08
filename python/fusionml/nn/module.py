@@ -1,10 +1,16 @@
 """
-Neural Network Module - Base class and layers
+Neural Network Module - Base class and layers (GPU-compatible)
 """
 
 from typing import List, Iterator, Tuple
 import numpy as np
-from ..tensor import Tensor
+from ..tensor import Tensor, relu as tensor_relu, sigmoid as tensor_sigmoid
+
+try:
+    import mlx.core as mx
+    HAS_MLX = True
+except ImportError:
+    HAS_MLX = False
 
 
 class Module:
@@ -51,7 +57,7 @@ class Module:
     def zero_grad(self):
         """Zero all gradients"""
         for param in self.parameters():
-            param.zero_grad()
+            param.grad = None
 
 
 class Linear(Module):
@@ -82,7 +88,6 @@ class Linear(Module):
     def forward(self, x: Tensor) -> Tensor:
         out = x @ self.weight
         if self.bias is not None:
-            # Broadcast bias
             out = out + self.bias
         return out
 
@@ -91,34 +96,53 @@ class ReLU(Module):
     """ReLU activation"""
     
     def forward(self, x: Tensor) -> Tensor:
-        result = Tensor(np.maximum(x._data, 0), requires_grad=x.requires_grad)
-        if x.requires_grad:
-            result._ctx = ('relu', x)
-        return result
+        return tensor_relu(x)
 
 
 class GELU(Module):
     """GELU activation"""
     
     def forward(self, x: Tensor) -> Tensor:
-        # GELU approximation
-        data = x._data
-        result = 0.5 * data * (1 + np.tanh(np.sqrt(2/np.pi) * (data + 0.044715 * data**3)))
-        return Tensor(result.astype(np.float32), requires_grad=x.requires_grad)
+        if x._on_gpu and HAS_MLX:
+            # Use MLX GELU
+            result = Tensor.__new__(Tensor)
+            # GELU approximation: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+            x_mlx = x._mlx
+            result._mlx = 0.5 * x_mlx * (1 + mx.tanh(np.sqrt(2/np.pi) * (x_mlx + 0.044715 * x_mlx ** 3)))
+            result._np = None
+            result._on_gpu = True
+            result.requires_grad = x.requires_grad
+            result._ctx = None
+            result.grad = None
+            return result
+        else:
+            data = x.numpy
+            result_data = 0.5 * data * (1 + np.tanh(np.sqrt(2/np.pi) * (data + 0.044715 * data**3)))
+            return Tensor(result_data.astype(np.float32), requires_grad=x.requires_grad)
 
 
 class Sigmoid(Module):
     """Sigmoid activation"""
     
     def forward(self, x: Tensor) -> Tensor:
-        return Tensor(1 / (1 + np.exp(-x._data)), requires_grad=x.requires_grad)
+        return tensor_sigmoid(x)
 
 
 class Tanh(Module):
     """Tanh activation"""
     
     def forward(self, x: Tensor) -> Tensor:
-        return Tensor(np.tanh(x._data), requires_grad=x.requires_grad)
+        if x._on_gpu and HAS_MLX:
+            result = Tensor.__new__(Tensor)
+            result._mlx = mx.tanh(x._mlx)
+            result._np = None
+            result._on_gpu = True
+            result.requires_grad = x.requires_grad
+            result._ctx = None
+            result.grad = None
+            return result
+        else:
+            return Tensor(np.tanh(x.numpy), requires_grad=x.requires_grad)
 
 
 class Dropout(Module):
@@ -131,8 +155,20 @@ class Dropout(Module):
     def forward(self, x: Tensor) -> Tensor:
         if not self.training:
             return x
-        mask = (np.random.rand(*x.shape) > self.p).astype(np.float32)
-        return Tensor(x._data * mask / (1 - self.p))
+        
+        if x._on_gpu and HAS_MLX:
+            mask = mx.random.uniform(shape=x.shape) > self.p
+            result = Tensor.__new__(Tensor)
+            result._mlx = x._mlx * mask.astype(mx.float32) / (1 - self.p)
+            result._np = None
+            result._on_gpu = True
+            result.requires_grad = x.requires_grad
+            result._ctx = None
+            result.grad = None
+            return result
+        else:
+            mask = (np.random.rand(*x.shape) > self.p).astype(np.float32)
+            return Tensor(x.numpy * mask / (1 - self.p))
 
 
 class Sequential(Module):

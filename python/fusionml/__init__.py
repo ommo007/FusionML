@@ -3,7 +3,7 @@ FusionML - High-Performance ML Framework for Apple Silicon
 GPU + CPU parallel execution for optimal performance
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 from .tensor import Tensor, zeros, ones, rand, randn, eye
 from . import nn

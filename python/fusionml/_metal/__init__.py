@@ -1,2 +1,2 @@
 """Metal backend"""
-from .engine import get_device, device_info, MetalBuffer, HAS_METAL
+from .engine import get_device, device_info, MetalBuffer, HAS_METAL, metal_matmul
