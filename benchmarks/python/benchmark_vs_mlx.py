@@ -12,7 +12,7 @@ from datetime import datetime
 sys.path.insert(0, '../../python')
 
 
-def benchmark_fusionml(sizes, iterations=10):
+def benchmark_fusionml(sizes, iterations=30):
     """Benchmark FusionML matmul"""
     import fusionml as fml
     fml.init()
@@ -26,17 +26,17 @@ def benchmark_fusionml(sizes, iterations=10):
         a.eval()
         b.eval()
         
-        # Warmup
-        for _ in range(3):
+        # Extended warmup
+        for _ in range(10):
             c = a @ b
-            c.eval()  # Force GPU computation
+            c.eval()
         
         # Benchmark
         times = []
         for _ in range(iterations):
             start = time.perf_counter()
             c = a @ b
-            c.eval()  # Force GPU computation
+            c.eval()
             end = time.perf_counter()
             times.append((end - start) * 1000)
         
@@ -49,7 +49,7 @@ def benchmark_fusionml(sizes, iterations=10):
     return results
 
 
-def benchmark_mlx(sizes, iterations=10):
+def benchmark_mlx(sizes, iterations=30):
     """Benchmark MLX matmul"""
     try:
         import mlx.core as mx
@@ -62,18 +62,19 @@ def benchmark_mlx(sizes, iterations=10):
     for size in sizes:
         a = mx.random.uniform(shape=(size, size))
         b = mx.random.uniform(shape=(size, size))
+        mx.eval(a, b)
         
-        # Warmup
-        for _ in range(3):
+        # Extended warmup
+        for _ in range(10):
             c = a @ b
-            mx.eval(c)  # Force computation
+            mx.eval(c)
         
         # Benchmark
         times = []
         for _ in range(iterations):
             start = time.perf_counter()
             c = a @ b
-            mx.eval(c)  # Force computation
+            mx.eval(c)
             end = time.perf_counter()
             times.append((end - start) * 1000)
         
