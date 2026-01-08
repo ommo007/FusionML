@@ -167,7 +167,10 @@ def benchmark_matmul(sizes, iterations=30):
 
 
 def benchmark_training(batch_size=32, hidden=256, epochs=100):
-    """Benchmark training"""
+    """Benchmark training - compares FusionML, MLX, and PyTorch"""
+    results = {"fusionml": {}, "mlx": {}, "pytorch": {}}
+    
+    # FusionML Training
     import fusionml as fml
     
     model = fml.nn.Sequential([
@@ -208,13 +211,138 @@ def benchmark_training(batch_size=32, hidden=256, epochs=100):
         
         times.append((end - start) * 1000)
     
-    return {
-        "batch_size": batch_size,
-        "hidden_size": hidden,
+    results["fusionml"] = {
         "mean_ms": sum(times) / len(times),
         "min_ms": min(times),
         "throughput_samples_per_sec": batch_size * 1000 / (sum(times) / len(times))
     }
+    
+    # MLX Training
+    try:
+        import mlx.core as mx
+        import mlx.nn as nn
+        import mlx.optimizers as optim
+        
+        class MLP(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.fc1 = nn.Linear(784, hidden)
+                self.fc2 = nn.Linear(hidden, 10)
+            
+            def __call__(self, x):
+                x = nn.relu(self.fc1(x))
+                return self.fc2(x)
+        
+        mlx_model = MLP()
+        mlx_optimizer = optim.Adam(learning_rate=0.001)
+        
+        def loss_fn(model, x, y):
+            logits = model(x)
+            return mx.mean(nn.losses.cross_entropy(logits, y))
+        
+        loss_and_grad = nn.value_and_grad(mlx_model, loss_fn)
+        
+        # Warmup
+        for _ in range(5):
+            x = mx.random.uniform(shape=(batch_size, 784))
+            y = mx.array([i % 10 for i in range(batch_size)])
+            loss, grads = loss_and_grad(mlx_model, x, y)
+            mlx_optimizer.update(mlx_model, grads)
+            mx.eval(mlx_model.parameters())
+        
+        # Benchmark
+        times = []
+        for _ in range(epochs):
+            x = mx.random.uniform(shape=(batch_size, 784))
+            y = mx.array([i % 10 for i in range(batch_size)])
+            
+            start = time.perf_counter()
+            loss, grads = loss_and_grad(mlx_model, x, y)
+            mlx_optimizer.update(mlx_model, grads)
+            mx.eval(mlx_model.parameters())
+            end = time.perf_counter()
+            
+            times.append((end - start) * 1000)
+        
+        results["mlx"] = {
+            "mean_ms": sum(times) / len(times),
+            "min_ms": min(times),
+            "throughput_samples_per_sec": batch_size * 1000 / (sum(times) / len(times))
+        }
+        results["mlx_version"] = mx.__version__ if hasattr(mx, '__version__') else "installed"
+    except ImportError:
+        results["mlx"] = None
+        results["mlx_error"] = "MLX not installed"
+    
+    # PyTorch Training
+    try:
+        import torch
+        import torch.nn as ptnn
+        
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            device = torch.device('mps')
+            results["pytorch_device"] = "mps"
+        else:
+            device = torch.device('cpu')
+            results["pytorch_device"] = "cpu"
+        
+        pt_model = ptnn.Sequential(
+            ptnn.Linear(784, hidden),
+            ptnn.ReLU(),
+            ptnn.Linear(hidden, 10)
+        ).to(device)
+        
+        pt_optimizer = torch.optim.Adam(pt_model.parameters(), lr=0.001)
+        pt_loss_fn = ptnn.CrossEntropyLoss()
+        
+        # Warmup
+        for _ in range(5):
+            x = torch.rand(batch_size, 784, device=device)
+            y = torch.tensor([i % 10 for i in range(batch_size)], device=device)
+            pt_optimizer.zero_grad()
+            out = pt_model(x)
+            loss = pt_loss_fn(out, y)
+            loss.backward()
+            pt_optimizer.step()
+            if device.type == 'mps':
+                torch.mps.synchronize()
+        
+        # Benchmark
+        times = []
+        for _ in range(epochs):
+            x = torch.rand(batch_size, 784, device=device)
+            y = torch.tensor([i % 10 for i in range(batch_size)], device=device)
+            
+            start = time.perf_counter()
+            pt_optimizer.zero_grad()
+            out = pt_model(x)
+            loss = pt_loss_fn(out, y)
+            loss.backward()
+            pt_optimizer.step()
+            if device.type == 'mps':
+                torch.mps.synchronize()
+            end = time.perf_counter()
+            
+            times.append((end - start) * 1000)
+        
+        results["pytorch"] = {
+            "mean_ms": sum(times) / len(times),
+            "min_ms": min(times),
+            "throughput_samples_per_sec": batch_size * 1000 / (sum(times) / len(times))
+        }
+        results["pytorch_version"] = torch.__version__
+    except ImportError:
+        results["pytorch"] = None
+        results["pytorch_error"] = "PyTorch not installed"
+    
+    results["config"] = {
+        "batch_size": batch_size,
+        "hidden_size": hidden,
+        "epochs": epochs,
+        "model": "MLP 784→256→10"
+    }
+    
+    return results
 
 
 def benchmark_vs_mlx(sizes, iterations=30):
@@ -385,8 +513,22 @@ def main():
     print("=" * 70)
     
     training_results = benchmark_training()
-    print(f"   Mean: {training_results['mean_ms']:.2f} ms/batch")
-    print(f"   Throughput: {training_results['throughput_samples_per_sec']:.0f} samples/sec")
+    
+    print(f"   {'Framework':<12} {'ms/batch':<12} {'samples/sec':<15}")
+    print("   " + "-" * 40)
+    
+    fml = training_results.get("fusionml", {})
+    if fml:
+        print(f"   {'FusionML':<12} {fml['mean_ms']:<12.2f} {fml['throughput_samples_per_sec']:<15.0f}")
+    
+    mlx = training_results.get("mlx", {})
+    if mlx and isinstance(mlx, dict) and "mean_ms" in mlx:
+        print(f"   {'MLX':<12} {mlx['mean_ms']:<12.2f} {mlx['throughput_samples_per_sec']:<15.0f}")
+    
+    pt = training_results.get("pytorch", {})
+    if pt and isinstance(pt, dict) and "mean_ms" in pt:
+        print(f"   {'PyTorch':<12} {pt['mean_ms']:<12.2f} {pt['throughput_samples_per_sec']:<15.0f}")
+    
     save_result(device_folder, "training", training_results, system_info)
     
     # 3. MLX Comparison
