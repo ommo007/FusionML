@@ -45,6 +45,9 @@ except ImportError:
 # UTILS
 # -----------------------------------------------------------------------------
 
+# Suppress NumPy warnings (overflow/underflow common in fp16/fp32 accumulation)
+np.seterr(all='ignore')
+
 def time_fn(fn, iterations=10, warmup=5):
     # Warmup
     for _ in range(warmup):
