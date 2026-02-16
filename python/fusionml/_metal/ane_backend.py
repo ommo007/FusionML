@@ -45,12 +45,12 @@ class _ModelCache:
     """Thread-safe cache for compiled CoreML models keyed by shape signature."""
     
     def __init__(self, max_size: int = 64):
-        self._cache: Dict[str, ct.models.MLModel] = {}
+        self._cache = {}
         self._max_size = max_size
         self._access_order: list = []
         self._temp_dir = tempfile.mkdtemp(prefix="fusionml_ane_")
     
-    def get(self, key: str) -> Optional[ct.models.MLModel]:
+    def get(self, key: str):
         if key in self._cache:
             # Move to end (most recently used)
             if key in self._access_order:
@@ -59,7 +59,7 @@ class _ModelCache:
             return self._cache[key]
         return None
     
-    def put(self, key: str, model: ct.models.MLModel):
+    def put(self, key: str, model):
         # Evict LRU if full
         if len(self._cache) >= self._max_size and key not in self._cache:
             lru_key = self._access_order.pop(0)
