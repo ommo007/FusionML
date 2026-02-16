@@ -13,6 +13,13 @@ except ImportError:
     HAS_MLX = False
     mx = None
 
+# Try to import tri-compute scheduler
+try:
+    from ._metal.tri_scheduler import get_scheduler as _get_tri_scheduler
+    HAS_TRI = True
+except ImportError:
+    HAS_TRI = False
+
 ArrayLike = Union[np.ndarray, List, float, int, 'mx.array'] if HAS_MLX else Union[np.ndarray, List, float, int]
 
 
@@ -386,7 +393,13 @@ class Tensor:
 
 def matmul(a: Tensor, b: Tensor) -> Tensor:
     """
-    Matrix multiplication with HYBRID strategy for maximum performance
+    Matrix multiplication with TRI-COMPUTE strategy for maximum performance.
+    
+    Routing:
+    - Both on GPU: Direct MLX (zero overhead)
+    - Small (<1000): CPU (Accelerate BLAS)
+    - Medium (1000-2048): MLX GPU
+    - Large (>=2048): Tri-compute (GPU+CPU+ANE parallel) when available
     """
     # FAST PATH: Both on GPU - skip all checks
     if a._on_gpu and b._on_gpu:
@@ -413,8 +426,18 @@ def matmul(a: Tensor, b: Tensor) -> Tensor:
         result._np = np.matmul(a_np, b_np)
         result._mlx = None
         result._on_gpu = False
+    elif HAS_TRI and min_dim >= 2048:
+        # Large matrices: Tri-compute (GPU+CPU+ANE parallel)
+        a_np = a.numpy if a._on_gpu else a._np
+        b_np = b.numpy if b._on_gpu else b._np
+        scheduler = _get_tri_scheduler()
+        c_np = scheduler.tri_matmul(a_np, b_np)
+        result = Tensor.__new__(Tensor)
+        result._np = c_np
+        result._mlx = None
+        result._on_gpu = False
     elif HAS_MLX:
-        # Large matrices: MLX GPU
+        # Medium matrices: MLX GPU
         a_mlx = a._mlx if a._on_gpu else mx.array(a._np)
         b_mlx = b._mlx if b._on_gpu else mx.array(b._np)
         result = Tensor.__new__(Tensor)
