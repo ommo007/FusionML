@@ -18,6 +18,7 @@ import os
 import time
 import hashlib
 
+
 # Try to import coremltools for ANE access
 try:
     import coremltools as ct
@@ -37,6 +38,8 @@ except Exception:
     _CoreML_available = False
 
 
+from typing import Optional, Tuple, Dict, Any
+
 # ============================================================================
 # MODEL CACHE
 # ============================================================================
@@ -50,7 +53,7 @@ class _ModelCache:
         self._access_order: list = []
         self._temp_dir = tempfile.mkdtemp(prefix="fusionml_ane_")
     
-    def get(self, key: str):
+    def get(self, key: str) -> Optional[Any]:
         if key in self._cache:
             # Move to end (most recently used)
             if key in self._access_order:
@@ -59,7 +62,7 @@ class _ModelCache:
             return self._cache[key]
         return None
     
-    def put(self, key: str, model):
+    def put(self, key: str, model: Any):
         # Evict LRU if full
         if len(self._cache) >= self._max_size and key not in self._cache:
             lru_key = self._access_order.pop(0)
@@ -88,7 +91,7 @@ _model_cache = _ModelCache()
 def _build_matmul_model(
     M: int, K: int, N: int,
     compute_units: str = "ALL"
-) -> Optional[ct.models.MLModel]:
+) -> Optional[Any]:
     """
     Build a CoreML model that performs matmul A(M,K) @ B(K,N) -> C(M,N)
     Routes to Neural Engine when compute_units includes ANE.
@@ -134,7 +137,7 @@ def _build_conv2d_model(
     out_channels: int, kernel_h: int, kernel_w: int,
     stride: int = 1, padding: int = 0,
     compute_units: str = "ALL"
-) -> Optional[ct.models.MLModel]:
+) -> Optional[Any]:
     """
     Build a CoreML model for Conv2D operation.
     ANE is highly optimized for convolutions.
@@ -183,7 +186,7 @@ def _build_conv2d_model(
 def _build_batch_norm_model(
     batch: int, channels: int, height: int, width: int,
     compute_units: str = "ALL"
-) -> Optional[ct.models.MLModel]:
+) -> Optional[Any]:
     """
     Build a CoreML model for Batch Normalization.
     ANE excels at this operation.
