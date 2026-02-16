@@ -76,13 +76,14 @@ def benchmark_transformer_block(B=1, L=128, D=512, Heads=8, iter=20):
     # Inputs (NumPy)
     x = np.random.randn(B, L, D).astype(np.float32)
     
-    # Init Weights (NumPy)
-    w_q = np.random.randn(D, D).astype(np.float32)
-    w_k = np.random.randn(D, D).astype(np.float32)
-    w_v = np.random.randn(D, D).astype(np.float32)
-    w_o = np.random.randn(D, D).astype(np.float32)
-    w_ff1 = np.random.randn(D, 4*D).astype(np.float32)
-    w_ff2 = np.random.randn(4*D, D).astype(np.float32)
+    # Init Weights (NumPy) - scaled to avoid overflow
+    scale = 0.02
+    w_q = np.random.randn(D, D).astype(np.float32) * scale
+    w_k = np.random.randn(D, D).astype(np.float32) * scale
+    w_v = np.random.randn(D, D).astype(np.float32) * scale
+    w_o = np.random.randn(D, D).astype(np.float32) * scale
+    w_ff1 = np.random.randn(D, 4*D).astype(np.float32) * scale
+    w_ff2 = np.random.randn(4*D, D).astype(np.float32) * scale
     
     # 1. NumPy Baseline
     def numpy_attn_mlp():
