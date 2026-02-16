@@ -17,6 +17,24 @@ This will:
 3. ✅ Run all 4 benchmarks
 4. ✅ Save results in a device-specific folder
 
+## 🔬 NeurIPS 2026 Reproducibility
+
+To verify the claims in our paper (FusionML vs MLX/PyTorch), run the **comprehensive reproducibility suite**. This script benchmarks:
+1. **Transformer Encoder Block** (End-to-End latency)
+2. **Matrix Multiplication** (End-to-End vs Native)
+3. **Forward Pass** (Pipeline optimization)
+4. **System Specifications** (Hardware/OS details)
+
+```bash
+./run_reproducibility.sh
+```
+
+The script will automatically:
+- Create a clean virtual environment
+- Install all dependencies
+- Run the full benchmark suite
+- Generate a timestamped report in `benchmarks/results/reproducibility/`
+
 ## 📊 Results Structure
 
 Results are organized by device:
