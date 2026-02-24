@@ -1,0 +1,52 @@
+FusionML Reproducibility Report
+Date: Tue Feb 17 19:53:32 IST 2026
+---------------------------------------------------------------
+SYSTEM SPECIFICATIONS:
+---------------------------------------------------------------
+      Model Name: Mac mini
+      Chip: Apple M4
+      Total Number of Cores: 10 (4 Performance and 6 Efficiency)
+      Memory: 24 GB
+ProductName:		macOS
+ProductVersion:		26.3
+BuildVersion:		25D125
+---------------------------------------------------------------
+
+1. Running Comparative Matmul Benchmark (End-to-End)...
+
+2. Running Transformer Encoder Block Benchmark...
+===============================================================
+   FusionML Transformer Encoder Benchmark (End-to-End)
+===============================================================
+
+Running Benchmark: B=1, L=128, D=512, Heads=8
+Framework       | Median Latency  | Throughput     
+--------------------------------------------------
+PyTorch (E2E)   |      2.638 ms   |    48524.3 tok/s ✅ WINNER
+MLX (E2E)       |      2.843 ms   |    45022.5 tok/s 
+FusionML        |      4.476 ms   |    28594.4 tok/s 
+NumPy           |      5.588 ms   |    22906.9 tok/s 
+
+Running Benchmark: B=4, L=512, D=512, Heads=8
+Framework       | Median Latency  | Throughput     
+--------------------------------------------------
+FusionML        |      8.625 ms   |   237441.8 tok/s ✅ WINNER
+PyTorch (E2E)   |     10.400 ms   |   196932.5 tok/s 
+MLX (E2E)       |     13.774 ms   |   148684.4 tok/s 
+NumPy           |    124.710 ms   |    16422.1 tok/s 
+
+Running Benchmark: B=8, L=1024, D=512, Heads=8
+Framework       | Median Latency  | Throughput     
+--------------------------------------------------
+MLX (E2E)       |     40.838 ms   |   200599.2 tok/s ✅ WINNER
+FusionML        |     41.472 ms   |   197530.3 tok/s 
+PyTorch (E2E)   |     47.537 ms   |   172327.6 tok/s 
+NumPy           |    824.145 ms   |     9940.0 tok/s 
+
+Running Benchmark: B=1, L=4096, D=512, Heads=8
+Framework       | Median Latency  | Throughput     
+--------------------------------------------------
+FusionML        |     47.085 ms   |    86991.7 tok/s ✅ WINNER
+MLX (E2E)       |     48.514 ms   |    84428.8 tok/s 
+PyTorch (E2E)   |     54.825 ms   |    74710.0 tok/s 
+NumPy           |    907.281 ms   |     4514.6 tok/s 
