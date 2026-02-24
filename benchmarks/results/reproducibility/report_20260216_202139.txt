@@ -1,0 +1,16 @@
+FusionML Reproducibility Report
+Date: Mon Feb 16 20:21:39 IST 2026
+---------------------------------------------------------------
+SYSTEM SPECIFICATIONS:
+---------------------------------------------------------------
+      Model Name: MacBook Air
+      Chip: Apple M1
+      Total Number of Cores: 8 (4 Performance and 4 Efficiency)
+      Memory: 8 GB
+ProductName:		macOS
+ProductVersion:		26.3
+BuildVersion:		25D125
+---------------------------------------------------------------
+
+1. Running Comparative Matmul Benchmark (End-to-End)...
+Warning: PyObjC Metal not available, using CPU fallback
