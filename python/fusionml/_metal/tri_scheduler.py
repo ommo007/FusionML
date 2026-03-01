@@ -168,11 +168,19 @@ class TriComputeScheduler:
         result = scheduler.tri_matmul(a, b)
     """
     
-    def __init__(self, auto_calibrate: bool = True):
+    def __init__(self, auto_calibrate: bool = True,
+                 enable_gpu: bool = True, enable_cpu: bool = True,
+                 enable_ane: bool = True, random_routing: bool = False):
         self.profiler = BackendProfiler()
         self.calibrated_ratios: Dict[str, Dict[str, float]] = {}
         self.auto_calibrate = auto_calibrate
         self._calibration_count = 0
+        
+        # Ablation control flags
+        self.enable_gpu = enable_gpu
+        self.enable_cpu = enable_cpu
+        self.enable_ane = enable_ane
+        self.random_routing = random_routing
         
         # Size thresholds for routing decisions
         self.CPU_ONLY_THRESHOLD = 512      # Below this: CPU only
@@ -286,20 +294,33 @@ class TriComputeScheduler:
         # Determine which backends to use
         backends = list(ratios.keys())
         
-        # Filter to available backends
-        available_backends = ["cpu"]  # CPU always available
-        if HAS_MLX and "gpu" in backends:
+        # Filter to available AND enabled backends
+        available_backends = []
+        if self.enable_cpu:
+            available_backends.append("cpu")
+        if HAS_MLX and self.enable_gpu and "gpu" in backends:
             available_backends.append("gpu")
-        if HAS_COREML and "ane" in backends:
+        if HAS_COREML and self.enable_ane and "ane" in backends:
             available_backends.append("ane")
         
-        # Recalculate ratios for available backends only
-        active_ratios = {k: ratios.get(k, 0) for k in available_backends}
-        total = sum(active_ratios.values())
-        if total > 0:
+        # Fallback: must have at least one backend
+        if not available_backends:
+            available_backends = ["cpu"]
+        
+        # Random routing (ablation baseline)
+        if self.random_routing:
+            import random
+            active_ratios = {k: random.random() for k in available_backends}
+            total = sum(active_ratios.values())
             active_ratios = {k: v / total for k, v in active_ratios.items()}
         else:
-            active_ratios = {"cpu": 1.0}
+            # Recalculate ratios for available backends only
+            active_ratios = {k: ratios.get(k, 0) for k in available_backends}
+            total = sum(active_ratios.values())
+            if total > 0:
+                active_ratios = {k: v / total for k, v in active_ratios.items()}
+            else:
+                active_ratios = {available_backends[0]: 1.0}
         
         # If only one backend, run directly
         if len(active_ratios) == 1:
