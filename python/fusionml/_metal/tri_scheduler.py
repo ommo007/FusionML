@@ -16,6 +16,7 @@ Strategy:
 import numpy as np
 from typing import Tuple, Dict, Optional, List
 import concurrent.futures
+import threading
 import time
 import json
 import os
@@ -197,51 +198,56 @@ class TriComputeScheduler:
 
     def calibrate(self, sizes: List[int] = None, iterations: int = 5, verbose: bool = True):
         """
-        Contention-aware calibration: profiles both parallel AND sequential
-        execution to determine whether splitting actually helps.
+        Contention-aware calibration via empirical grid search.
         
         On unified-memory SoCs, backends share memory bandwidth.
-        Running them simultaneously may be SLOWER than a single backend.
-        We measure both and pick the genuinely faster approach.
+        Profiling them independently OVERESTIMATES parallel performance.
+        Instead, we grid-search actual parallel execution times across
+        split ratios to find the empirically optimal ratio.
+        
+        This is the core FusionML innovation: contention-aware scheduling.
         """
         if sizes is None:
             sizes = [256, 512, 1024, 2048, 4096]
         
         if verbose:
-            print("⚡ Tri-Compute Calibration (contention-aware)")
+            print("⚡ Tri-Compute Calibration (contention-aware grid search)")
             print("=" * 60)
         
         for size in sizes:
             if verbose:
                 print(f"\n  Profiling matmul {size}x{size}...")
             
-            # Phase 1: Profile each backend independently
+            # Phase 1: Profile each backend independently (for baseline)
             profile = self.profiler.profile_matmul(size, iterations=iterations)
-            ratios = compute_optimal_ratios(profile)
+            best_single = min(profile, key=profile.get)
+            best_single_time = profile[best_single]
             
-            # Phase 2: Profile PARALLEL execution with these ratios
-            parallel_time = self._profile_parallel(size, ratios, iterations=iterations)
+            if verbose:
+                parts = [f"{k}={v:.3f}ms" for k, v in profile.items()]
+                print(f"    Solo: {', '.join(parts)}")
             
-            # Phase 3: Find best single backend
-            best_single_backend = min(profile, key=profile.get)
-            best_single_time = profile[best_single_backend]
-            
-            # Decision: use parallel only if it genuinely beats best single
-            if parallel_time is not None and parallel_time < best_single_time * 0.95:
-                # Parallel wins (with 5% margin to avoid noise)
-                key = f"matmul_{size}"
-                self.calibrated_ratios[key] = ratios
-                if verbose:
-                    print(f"    ✅ Parallel wins: {parallel_time:.3f}ms vs {best_single_backend}={best_single_time:.3f}ms")
-                    parts = [f"{k}={v:.1%}" for k, v in ratios.items()]
-                    print(f"    Ratios: {', '.join(parts)}")
+            # Phase 2: Grid search parallel split ratios
+            if len(profile) >= 2 and HAS_MLX and self.enable_gpu and self.enable_cpu:
+                best_ratio, best_time = self._grid_search_ratio(
+                    size, iterations=max(3, iterations), verbose=verbose
+                )
+                
+                if best_time < best_single_time * 0.98:  # 2% margin
+                    key = f"matmul_{size}"
+                    self.calibrated_ratios[key] = {"gpu": best_ratio, "cpu": 1.0 - best_ratio}
+                    if verbose:
+                        print(f"    ✅ Parallel wins: {best_time:.3f}ms (GPU={best_ratio:.0%}/CPU={1-best_ratio:.0%}) vs {best_single}={best_single_time:.3f}ms")
+                else:
+                    key = f"matmul_{size}"
+                    self.calibrated_ratios[key] = {best_single: 1.0}
+                    if verbose:
+                        print(f"    ⚡ Single wins: {best_single}={best_single_time:.3f}ms vs best parallel={best_time:.3f}ms")
             else:
-                # Single backend wins — store 100% for that backend
                 key = f"matmul_{size}"
-                self.calibrated_ratios[key] = {best_single_backend: 1.0}
+                self.calibrated_ratios[key] = {best_single: 1.0}
                 if verbose:
-                    par_str = f"{parallel_time:.3f}ms" if parallel_time else "N/A"
-                    print(f"    ⚡ Single-backend wins: {best_single_backend}={best_single_time:.3f}ms vs parallel={par_str}")
+                    print(f"    → {best_single} only: {best_single_time:.3f}ms")
         
         self._calibration_count += 1
         
@@ -249,40 +255,55 @@ class TriComputeScheduler:
             print(f"\n{'=' * 60}")
             print(f"✓ Calibration complete ({len(sizes)} sizes)")
     
-    def _profile_parallel(self, size: int, ratios: Dict[str, float], 
-                          iterations: int = 5) -> Optional[float]:
-        """Profile actual parallel execution with the given ratios."""
-        if len(ratios) < 2:
-            return None
-        
+    def _grid_search_ratio(self, size: int, iterations: int = 5,
+                           verbose: bool = False) -> Tuple[float, float]:
+        """
+        Grid search GPU/CPU split ratios under actual parallel execution.
+        Returns (best_gpu_ratio, best_time_ms).
+        """
         a = np.random.randn(size, size).astype(np.float32)
         b = np.random.randn(size, size).astype(np.float32)
+        b_mx = mx.array(b)
         
-        # Build a temporary scheduler with these ratios
-        key = f"matmul_{size}"
-        old_ratios = self.calibrated_ratios.get(key)
-        self.calibrated_ratios[key] = ratios
+        best_ratio = 1.0
+        best_time = float('inf')
         
-        # Warmup
-        try:
-            self.tri_matmul(a, b)
-        except Exception:
-            self.calibrated_ratios.pop(key, None)
-            return None
+        # Search from 85% to 98% GPU (CPU gets 2-15%)
+        import threading
+        for gpu_pct in [88, 90, 92, 94, 96]:
+            gpu_rows = int(size * gpu_pct / 100)
+            cpu_rows = size - gpu_rows
+            if cpu_rows < 1 or gpu_rows < 1:
+                continue
+            
+            a_gpu_mx = mx.array(np.ascontiguousarray(a[:gpu_rows]))
+            a_cpu = np.ascontiguousarray(a[gpu_rows:])
+            result_cpu = np.empty((cpu_rows, size), dtype=np.float32)
+            
+            def gpu_fn():
+                c = a_gpu_mx @ b_mx; mx.eval(c)
+            def cpu_fn():
+                np.matmul(a_cpu, b, out=result_cpu)
+            
+            # Warmup
+            t1 = threading.Thread(target=gpu_fn)
+            t2 = threading.Thread(target=cpu_fn)
+            t1.start(); t2.start(); t1.join(); t2.join()
+            
+            times = []
+            for _ in range(iterations):
+                t0 = time.perf_counter()
+                t1 = threading.Thread(target=gpu_fn)
+                t2 = threading.Thread(target=cpu_fn)
+                t1.start(); t2.start(); t1.join(); t2.join()
+                times.append((time.perf_counter() - t0) * 1000)
+            
+            med = float(np.median(times))
+            if med < best_time:
+                best_time = med
+                best_ratio = gpu_pct / 100.0
         
-        times = []
-        for _ in range(iterations):
-            t0 = time.perf_counter()
-            self.tri_matmul(a, b)
-            times.append((time.perf_counter() - t0) * 1000)
-        
-        # Restore old ratios
-        if old_ratios is not None:
-            self.calibrated_ratios[key] = old_ratios
-        else:
-            self.calibrated_ratios.pop(key, None)
-        
-        return float(np.median(times))
+        return best_ratio, best_time
     
     def get_ratios(self, size: int) -> Dict[str, float]:
         """
@@ -383,7 +404,7 @@ class TriComputeScheduler:
                 return np.matmul(a, b)
         
         # ============================================================
-        # PARALLEL EXECUTION — optimized hot path
+        # PARALLEL EXECUTION — raw threads + pre-converted MLX
         # ============================================================
         
         # Compute split points
@@ -392,23 +413,50 @@ class TriComputeScheduler:
         # Pre-allocate result
         result = np.empty((M, N), dtype=np.float32)
         
-        # Submit all work to persistent pool using numpy views (zero-copy)
-        futures = {}
+        # Identify GPU and CPU work
+        gpu_slice = None
+        cpu_slices = []
+        
         for backend, (start, end) in splits.items():
-            if end > start:
-                # numpy slicing returns a VIEW, not a copy
-                future = self._pool.submit(
-                    self._execute_into, backend, a[start:end], b, result, start, end
-                )
-                futures[future] = backend
+            if end <= start:
+                continue
+            if backend == "gpu" and HAS_MLX:
+                gpu_slice = (start, end)
+            else:
+                cpu_slices.append((backend, start, end))
         
-        # Wait for all to complete
-        concurrent.futures.wait(futures.keys())
+        # Pre-convert GPU data to MLX (zero-copy on unified memory)
+        threads = []
         
-        # Check for exceptions
-        for future in futures:
-            if future.exception() is not None:
-                raise future.exception()
+        if gpu_slice:
+            gs, ge = gpu_slice
+            a_gpu_mx = mx.array(a[gs:ge])
+            b_mx = mx.array(b)
+            def gpu_work():
+                c = a_gpu_mx @ b_mx
+                mx.eval(c)
+                result[gs:ge] = np.array(c)
+            threads.append(threading.Thread(target=gpu_work))
+        
+        for backend, start, end in cpu_slices:
+            if backend == "ane" and HAS_COREML:
+                a_s, b_c = a[start:end], b
+                s, e = start, end
+                def ane_work(a_s=a_s, b_c=b_c, s=s, e=e):
+                    result[s:e] = ane_matmul(a_s, b_c)
+                threads.append(threading.Thread(target=ane_work))
+            else:
+                a_s, b_c = a[start:end], b
+                out = result[start:end]
+                def cpu_work(a_s=a_s, b_c=b_c, out=out):
+                    np.matmul(a_s, b_c, out=out)
+                threads.append(threading.Thread(target=cpu_work))
+        
+        # Launch all threads simultaneously
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
         
         return result
     
