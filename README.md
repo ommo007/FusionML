@@ -1,18 +1,23 @@
 # FusionML
 
+[![PyPI](https://img.shields.io/pypi/v/fusionml?color=blue)](https://pypi.org/project/fusionml/)
+[![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 **High-Performance Machine Learning Framework for Apple Silicon**
 
-FusionML delivers PyTorch-like ease of use with a unique advantage: **intelligent parallel execution across GPU, CPU, and Neural Engine** – achieving up to 31% faster matrix operations through hardware fusion.
+FusionML delivers PyTorch-like ease of use with a unique advantage: **intelligent parallel execution across GPU, CPU, and Neural Engine** – achieving up to 33% faster matrix operations through hardware fusion.
 
-## Features
+## ✨ Features
 
 - 🔥 **PyTorch-Style API** - Familiar `Fusion.nn`, `Fusion.optim`, `Fusion.autograd`
-- ⚡ **Intelligent Routing** - Automatic work distribution across GPU + CPU
+- ⚡ **Intelligent Routing** - Automatic work distribution across GPU + CPU in parallel
 - 🧠 **Full Autograd** - Computation graph with backpropagation
 - 🎯 **Apple Silicon Optimized** - Metal, Accelerate, and Neural Engine
 - 📦 **Zero Dependencies** - Pure Swift with system frameworks only
+- 🐍 **Python Bindings** - Use from Python with `pip install fusionml`
 
-## Installation
+## 📦 Installation
 
 ### Swift Package Manager
 
@@ -22,106 +27,140 @@ dependencies: [
 ]
 ```
 
-## Quick Start
+### Python (pip)
+
+```bash
+pip install fusionml
+```
+
+## 🚀 Quick Start
+
+### Swift
 
 ```swift
 import FusionML
 
-// Initialize
 Fusion.initialize()
-
-// Create tensors
-let x = try Fusion.rand([32, 784])
-let y = try Fusion.randint(0, 10, [32])
 
 // Build model
 let model = Fusion.nn.sequential(
-    Fusion.nn.linear(784, 256),
+    try Fusion.nn.linear(784, 256),
     Fusion.nn.relu(),
-    Fusion.nn.linear(256, 10)
+    try Fusion.nn.linear(256, 10)
 )
 
-// Optimizer
+// Train
 let optimizer = Fusion.optim.adam(model.parameters(), lr: 0.001)
+let output = try model.forward(GradTensor(x, requiresGrad: true))
+let loss = try Fusion.nn.functional.crossEntropy(output, y)
 
-// Training loop
-for epoch in 0..<10 {
-    optimizer.zeroGrad()
-    
-    let output = try model.forward(GradTensor(x, requiresGrad: false))
-    let loss = try Fusion.nn.functional.crossEntropy(output, y)
-    
-    try Fusion.autograd.backward(loss)
-    try optimizer.step()
-    
-    print("Epoch \(epoch): Loss = \(loss.data.toArray()[0])")
-}
+try Fusion.autograd.backward(loss)
+try optimizer.step()
 ```
 
-## API Reference
+### Python
+
+```python
+import fusionml as fml
+
+fml.init()
+
+# Build model
+model = fml.nn.Sequential([
+    fml.nn.Linear(784, 256),
+    fml.nn.ReLU(),
+    fml.nn.Linear(256, 10)
+])
+
+# Train
+optimizer = fml.optim.Adam(model.parameters(), lr=0.001)
+output = model(x)
+loss = fml.nn.functional.cross_entropy(output, y)
+
+loss.backward()
+optimizer.step()
+```
+
+## 📊 Performance
+
+Tested on Apple M1:
+
+| Operation | CPU | GPU | FusionML | Speedup |
+|-----------|-----|-----|----------|---------|
+| MatMul 1024² | 6ms | 4ms | **3ms** | +33% |
+| MatMul 2048² | 18ms | 12ms | **9ms** | +33% |
+| MatMul 4096² | 85ms | 52ms | **38ms** | +27% |
+
+> 📈 See [benchmarks branch](https://github.com/ommo007/FusionML/tree/benchmarks) for detailed results and contribution guide.
+
+## 🔧 How It Works
+
+FusionML's **IntelligentRouter** analyzes each operation and distributes work across hardware in parallel:
+
+```
+Traditional:  GPU ─────────────────────→ Result
+
+FusionML:     GPU (68%) ──────┬────────→ Result (faster!)
+              CPU (32%) ──────┘
+```
+
+The split ratio is calibrated dynamically per-device using unified memory for zero-copy data sharing.
+
+## 📚 API Reference
 
 ### Neural Network (`Fusion.nn`)
 ```swift
-Fusion.nn.linear(inFeatures, outFeatures)
-Fusion.nn.relu()
-Fusion.nn.gelu()
-Fusion.nn.dropout(0.5)
-Fusion.nn.layerNorm([hiddenSize])
-Fusion.nn.sequential(layer1, layer2, ...)
-```
-
-### Functional (`Fusion.nn.functional`)
-```swift
-Fusion.nn.functional.relu(tensor)
-Fusion.nn.functional.softmax(tensor)
-Fusion.nn.functional.crossEntropy(predictions, targets)
-Fusion.nn.functional.mse(predictions, targets)
+Fusion.nn.linear(in, out)      // Linear layer
+Fusion.nn.relu()               // ReLU activation
+Fusion.nn.gelu()               // GELU activation
+Fusion.nn.dropout(0.5)         // Dropout
+Fusion.nn.sequential(...)      // Container
 ```
 
 ### Optimizers (`Fusion.optim`)
 ```swift
-Fusion.optim.sgd(parameters, lr: 0.01, momentum: 0.9)
-Fusion.optim.adam(parameters, lr: 0.001)
-Fusion.optim.adamw(parameters, lr: 0.001, weightDecay: 0.01)
+Fusion.optim.sgd(params, lr: 0.01, momentum: 0.9)
+Fusion.optim.adam(params, lr: 0.001)
+Fusion.optim.adamw(params, lr: 0.001, weightDecay: 0.01)
 ```
 
-### Hardware Backends
+### Backend Access
 ```swift
-Fusion.linalg.matmul(a, b)  // Intelligent routing (fastest!)
+Fusion.linalg.matmul(a, b)  // Smart routing (recommended)
 Fusion.cpu.matmul(a, b)      // Force CPU
 Fusion.gpu.matmul(a, b)      // Force GPU
 ```
 
-## Performance
-
-| Operation | CPU | GPU | Fusion (smart) | Speedup |
-|-----------|-----|-----|----------------|---------|
-| MatMul 1024² | 6ms | 4ms | 3ms | +33% |
-| MatMul 2048² | 18ms | 12ms | 9ms | +33% |
-
-## How It Works
-
-FusionML's **IntelligentRouter** analyzes each operation and distributes work:
+## 🗂️ Project Structure
 
 ```
-Traditional:  GPU ────────────────→ Result
-
-FusionML:     GPU (68%) ────┬─────→ Result (faster!)
-              CPU (32%) ────┘
+FusionML/
+├── sources/FusionML/    # Swift library
+├── python/fusionml/     # Python bindings (for ML researchers)
+├── examples/            # Swift examples
+├── tests/               # Test suites
+└── docs/                # Documentation
 ```
 
-The split ratio is calibrated per-device for optimal throughput.
+> **Note**: The Python code provides bindings for ML researchers who prefer Python. The core library is pure Swift.
 
-## Requirements
+## 📋 Requirements
 
 - macOS 12.0+
-- Apple Silicon (M series)
-- Swift 5.9+
+- Apple Silicon (M1/M2/M3/M4)
+- Swift 5.9+ (for Swift)
+- Python 3.8+ (for Python)
 
-## License
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+**Want to benchmark on your device?** Check the [benchmarks branch](https://github.com/ommo007/FusionML/tree/benchmarks).
+
+## 📄 License
 
 MIT License - see [LICENSE](LICENSE)
 
-## Contributing
+## 🙏 Acknowledgments
 
-See [CONTRIBUTING.md](CONTRIBUTING.md)
+Built with ❤️ for the Apple Silicon ML community.

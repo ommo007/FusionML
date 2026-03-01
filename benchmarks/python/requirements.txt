@@ -1,6 +1,0 @@
-numpy>=1.24.0,<2.0.0
-torch>=2.0.0
-mlx>=0.1.0; sys_platform == 'darwin'
-tqdm
-pyobjc-framework-Metal; sys_platform == 'darwin'
-pyobjc-framework-Cocoa; sys_platform == 'darwin'
