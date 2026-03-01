@@ -186,47 +186,103 @@ class TriComputeScheduler:
         self.CPU_ONLY_THRESHOLD = 512      # Below this: CPU only
         self.DUAL_THRESHOLD = 1024         # Below this: GPU+CPU only
         # Above DUAL_THRESHOLD: tri-compute (GPU+CPU+ANE)
+        
+        # Persistent thread pool — eliminates thread creation overhead
+        self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=3)
     
+    def __del__(self):
+        """Clean up thread pool."""
+        if hasattr(self, '_pool'):
+            self._pool.shutdown(wait=False)
+
     def calibrate(self, sizes: List[int] = None, iterations: int = 5, verbose: bool = True):
         """
-        Run calibration suite: profile all backends at various sizes
-        and compute optimal ratios.
+        Contention-aware calibration: profiles both parallel AND sequential
+        execution to determine whether splitting actually helps.
         
-        Args:
-            sizes: Matrix sizes to calibrate
-            iterations: Number of trials per size
-            verbose: Print results
+        On unified-memory SoCs, backends share memory bandwidth.
+        Running them simultaneously may be SLOWER than a single backend.
+        We measure both and pick the genuinely faster approach.
         """
         if sizes is None:
             sizes = [256, 512, 1024, 2048, 4096]
         
         if verbose:
-            print("⚡ Tri-Compute Calibration")
+            print("⚡ Tri-Compute Calibration (contention-aware)")
             print("=" * 60)
         
         for size in sizes:
             if verbose:
                 print(f"\n  Profiling matmul {size}x{size}...")
             
+            # Phase 1: Profile each backend independently
             profile = self.profiler.profile_matmul(size, iterations=iterations)
             ratios = compute_optimal_ratios(profile)
             
-            key = f"matmul_{size}"
-            self.calibrated_ratios[key] = ratios
+            # Phase 2: Profile PARALLEL execution with these ratios
+            parallel_time = self._profile_parallel(size, ratios, iterations=iterations)
             
-            if verbose:
-                print(f"    Latencies: ", end="")
-                parts = [f"{k}={v:.3f}ms" for k, v in profile.items()]
-                print(", ".join(parts))
-                print(f"    Ratios:    ", end="")
-                parts = [f"{k}={v:.1%}" for k, v in ratios.items()]
-                print(", ".join(parts))
+            # Phase 3: Find best single backend
+            best_single_backend = min(profile, key=profile.get)
+            best_single_time = profile[best_single_backend]
+            
+            # Decision: use parallel only if it genuinely beats best single
+            if parallel_time is not None and parallel_time < best_single_time * 0.95:
+                # Parallel wins (with 5% margin to avoid noise)
+                key = f"matmul_{size}"
+                self.calibrated_ratios[key] = ratios
+                if verbose:
+                    print(f"    ✅ Parallel wins: {parallel_time:.3f}ms vs {best_single_backend}={best_single_time:.3f}ms")
+                    parts = [f"{k}={v:.1%}" for k, v in ratios.items()]
+                    print(f"    Ratios: {', '.join(parts)}")
+            else:
+                # Single backend wins — store 100% for that backend
+                key = f"matmul_{size}"
+                self.calibrated_ratios[key] = {best_single_backend: 1.0}
+                if verbose:
+                    par_str = f"{parallel_time:.3f}ms" if parallel_time else "N/A"
+                    print(f"    ⚡ Single-backend wins: {best_single_backend}={best_single_time:.3f}ms vs parallel={par_str}")
         
         self._calibration_count += 1
         
         if verbose:
             print(f"\n{'=' * 60}")
             print(f"✓ Calibration complete ({len(sizes)} sizes)")
+    
+    def _profile_parallel(self, size: int, ratios: Dict[str, float], 
+                          iterations: int = 5) -> Optional[float]:
+        """Profile actual parallel execution with the given ratios."""
+        if len(ratios) < 2:
+            return None
+        
+        a = np.random.randn(size, size).astype(np.float32)
+        b = np.random.randn(size, size).astype(np.float32)
+        
+        # Build a temporary scheduler with these ratios
+        key = f"matmul_{size}"
+        old_ratios = self.calibrated_ratios.get(key)
+        self.calibrated_ratios[key] = ratios
+        
+        # Warmup
+        try:
+            self.tri_matmul(a, b)
+        except Exception:
+            self.calibrated_ratios.pop(key, None)
+            return None
+        
+        times = []
+        for _ in range(iterations):
+            t0 = time.perf_counter()
+            self.tri_matmul(a, b)
+            times.append((time.perf_counter() - t0) * 1000)
+        
+        # Restore old ratios
+        if old_ratios is not None:
+            self.calibrated_ratios[key] = old_ratios
+        else:
+            self.calibrated_ratios.pop(key, None)
+        
+        return float(np.median(times))
     
     def get_ratios(self, size: int) -> Dict[str, float]:
         """
@@ -266,21 +322,15 @@ class TriComputeScheduler:
         Matrix multiplication using all available compute units in parallel.
         
         Splits rows of A across GPU, CPU, and ANE based on calibrated ratios.
-        All 3 compute concurrently, results are combined.
+        All compute concurrently, results are combined.
         
-        Args:
-            a: Left matrix (M, K)
-            b: Right matrix (K, N)
-        
-        Returns:
-            Result matrix (M, N)
+        Optimized for zero overhead:
+          - Persistent thread pool (no thread creation cost)
+          - View-based slicing (no data copies)
+          - Pre-allocated output buffer
         """
-        a = np.ascontiguousarray(a, dtype=np.float32)
-        b = np.ascontiguousarray(b, dtype=np.float32)
-        
         M, K = a.shape
         K2, N = b.shape
-        assert K == K2, f"Shape mismatch: {a.shape} vs {b.shape}"
         
         min_dim = min(M, K, N)
         
@@ -322,7 +372,7 @@ class TriComputeScheduler:
             else:
                 active_ratios = {available_backends[0]: 1.0}
         
-        # If only one backend, run directly
+        # If only one backend, run directly (zero overhead)
         if len(active_ratios) == 1:
             backend = list(active_ratios.keys())[0]
             if backend == "gpu":
@@ -332,34 +382,33 @@ class TriComputeScheduler:
             else:
                 return np.matmul(a, b)
         
+        # ============================================================
+        # PARALLEL EXECUTION — optimized hot path
+        # ============================================================
+        
         # Compute split points
         splits = self._compute_splits(M, active_ratios)
         
-        # Define work functions
-        work_items = []
+        # Pre-allocate result
+        result = np.empty((M, N), dtype=np.float32)
+        
+        # Submit all work to persistent pool using numpy views (zero-copy)
+        futures = {}
         for backend, (start, end) in splits.items():
-            if end > start:  # Non-empty slice
-                a_slice = a[start:end, :]
-                work_items.append((backend, start, end, a_slice))
+            if end > start:
+                # numpy slicing returns a VIEW, not a copy
+                future = self._pool.submit(
+                    self._execute_into, backend, a[start:end], b, result, start, end
+                )
+                futures[future] = backend
         
-        # Execute in parallel
-        result = np.zeros((M, N), dtype=np.float32)
+        # Wait for all to complete
+        concurrent.futures.wait(futures.keys())
         
-        if len(work_items) == 1:
-            # Single backend
-            backend, start, end, a_slice = work_items[0]
-            result[start:end, :] = self._execute_backend(backend, a_slice, b)
-        else:
-            # Parallel execution across backends
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(work_items)) as executor:
-                futures = {}
-                for backend, start, end, a_slice in work_items:
-                    future = executor.submit(self._execute_backend, backend, a_slice, b)
-                    futures[future] = (start, end)
-                
-                for future in concurrent.futures.as_completed(futures):
-                    start, end = futures[future]
-                    result[start:end, :] = future.result()
+        # Check for exceptions
+        for future in futures:
+            if future.exception() is not None:
+                raise future.exception()
         
         return result
     
@@ -392,6 +441,19 @@ class TriComputeScheduler:
             return ane_matmul(a, b)
         else:  # cpu
             return np.matmul(a, b)
+    
+    def _execute_into(
+        self, backend: str, a: np.ndarray, b: np.ndarray,
+        out: np.ndarray, row_start: int, row_end: int
+    ):
+        """Execute matmul and write result directly into output buffer."""
+        if backend == "gpu":
+            out[row_start:row_end, :] = self._gpu_matmul(a, b)
+        elif backend == "ane":
+            out[row_start:row_end, :] = ane_matmul(a, b)
+        else:  # cpu
+            # NumPy matmul supports `out` parameter for zero-copy write
+            np.matmul(a, b, out=out[row_start:row_end, :])
     
     def _gpu_matmul(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         """GPU matmul via MLX."""
