@@ -8,14 +8,11 @@ import ctypes
 
 # Try to import Metal via PyObjC
 try:
-    import objc
     import Metal
     HAS_METAL = True
-except ImportError as e:
+except ImportError:
     HAS_METAL = False
-    # Only print verbose warning if debugging or on Mac
-    # print(f"Warning: PyObjC Metal not available, using CPU fallback. Error: {e}")
-    pass
+    print("Warning: PyObjC Metal not available, using CPU fallback")
 
 # Metal device singleton
 _device = None
