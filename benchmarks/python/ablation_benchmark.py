@@ -28,8 +28,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../p
 
 from fusionml._metal.tri_scheduler import TriComputeScheduler, HAS_MLX, HAS_COREML
 
-# Suppress NumPy warnings
+# Suppress NumPy warnings and force unbuffered stdout
 np.seterr(all='ignore')
+
+def log(msg=""):
+    print(msg, flush=True)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -83,22 +86,29 @@ def time_matmul(scheduler: TriComputeScheduler, size: int,
 
 def run_ablation() -> Dict:
     """Run all ablation configurations across all sizes."""
-    print("=" * 70)
-    print("  FusionML Ablation Study — NeurIPS 2026")
-    print("=" * 70)
-    print(f"  Backends available: CPU=True, GPU(MLX)={HAS_MLX}, ANE(CoreML)={HAS_COREML}")
-    print(f"  Sizes: {SIZES}")
-    print(f"  Iterations: {ITERATIONS}  |  Warmup: {WARMUP}")
-    print("=" * 70)
+    log("=" * 70)
+    log("  FusionML Ablation Study — NeurIPS 2026")
+    log("=" * 70)
+    log(f"  Backends available: CPU=True, GPU(MLX)={HAS_MLX}, ANE(CoreML)={HAS_COREML}")
+    log(f"  Sizes: {SIZES}")
+    log(f"  Iterations: {ITERATIONS}  |  Warmup: {WARMUP}")
+    log("=" * 70)
+
+    # Warmup ANE (CoreML compilation is slow on first call)
+    if HAS_COREML:
+        log("\n  🧠 Warming up ANE (CoreML compilation, may take 30-60s)...")
+        from fusionml._metal.ane_backend import warmup_ane
+        warmup_ane(sizes=[256, 512, 1024])
+        log("  ANE warmup complete.")
 
     all_results = {}
 
     for size in SIZES:
-        print(f"\n{'─' * 70}")
-        print(f"  Matrix Size: {size}×{size}")
-        print(f"{'─' * 70}")
-        print(f"  {'Config':<16} | {'Median (ms)':>12} | {'Std (ms)':>10} | {'Speedup':>8}")
-        print(f"  {'-'*16}-+-{'-'*12}-+-{'-'*10}-+-{'-'*8}")
+        log(f"\n{'─' * 70}")
+        log(f"  Matrix Size: {size}×{size}")
+        log(f"{'─' * 70}")
+        log(f"  {'Config':<16} | {'Median (ms)':>12} | {'Std (ms)':>10} | {'Speedup':>8}")
+        log(f"  {'-'*16}-+-{'-'*12}-+-{'-'*10}-+-{'-'*8}")
 
         size_results = {}
         cpu_baseline = None
@@ -107,11 +117,13 @@ def run_ablation() -> Dict:
             # Skip configs that require unavailable backends
             if flags["enable_gpu"] and not HAS_MLX:
                 if not flags["enable_cpu"]:
-                    print(f"  {config_name:<16} | {'SKIPPED (no MLX)':>35}")
+                    log(f"  {config_name:<16} | {'SKIPPED (no MLX)':>35}")
                     continue
             if flags["enable_ane"] and not HAS_COREML:
                 # Still run but ANE will be disabled internally
                 pass
+
+            log(f"  {config_name:<16} | benchmarking...", )
 
             scheduler = TriComputeScheduler(
                 auto_calibrate=True,
@@ -127,15 +139,16 @@ def run_ablation() -> Dict:
                 cpu_baseline = stats["median_ms"]
 
             speedup = cpu_baseline / stats["median_ms"] if cpu_baseline else 1.0
-            print(f"  {config_name:<16} | {stats['median_ms']:>10.3f}ms | "
-                  f"{stats['std_ms']:>8.3f}ms | {speedup:>6.2f}×")
+            # Overwrite the "benchmarking..." line
+            print(f"\r  {config_name:<16} | {stats['median_ms']:>10.3f}ms | "
+                  f"{stats['std_ms']:>8.3f}ms | {speedup:>6.2f}×", flush=True)
 
         all_results[str(size)] = size_results
 
         # Print winner
         if size_results:
             winner = min(size_results.items(), key=lambda kv: kv[1]["median_ms"])
-            print(f"\n  🏆 Winner: {winner[0]} ({winner[1]['median_ms']:.3f}ms)")
+            log(f"\n  🏆 Winner: {winner[0]} ({winner[1]['median_ms']:.3f}ms)")
 
     return all_results
 
