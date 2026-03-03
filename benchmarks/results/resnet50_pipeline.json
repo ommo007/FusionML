@@ -1,0 +1,246 @@
+{
+  "model": "ResNet-50 (BasicBlock)",
+  "total_layers": 32,
+  "schedule": {
+    "gpu_layers": 3,
+    "ane_layers": 29,
+    "cpu_layers": 0
+  },
+  "latency_ms": {
+    "cpu": 905.0833959990996,
+    "gpu": 49.97410400392255,
+    "ane": 17.852708508144133,
+    "pipeline": 20.837957999901846
+  },
+  "speedup_vs_gpu": {
+    "ane": 64.27608085431038,
+    "pipeline": 58.30248802806701
+  },
+  "winner": "ANE",
+  "per_layer": [
+    {
+      "name": "block0_conv1_bn_relu",
+      "gpu_ms": 1.168832997791469,
+      "ane_ms": 0.6342499982565641,
+      "cpu_ms": 3.9010420005070046,
+      "assigned": "ane"
+    },
+    {
+      "name": "block0_conv2_bn",
+      "gpu_ms": 1.1888750013895333,
+      "ane_ms": 0.5704999930458143,
+      "cpu_ms": 2.147207997040823,
+      "assigned": "ane"
+    },
+    {
+      "name": "block1_conv1_bn_relu",
+      "gpu_ms": 1.2022500013699755,
+      "ane_ms": 0.67254199529998,
+      "cpu_ms": 2.4403330025961623,
+      "assigned": "ane"
+    },
+    {
+      "name": "block1_conv2_bn",
+      "gpu_ms": 1.245000006747432,
+      "ane_ms": 0.6127910019131377,
+      "cpu_ms": 2.728625011513941,
+      "assigned": "ane"
+    },
+    {
+      "name": "block2_conv1_bn_relu",
+      "gpu_ms": 1.1660000018309802,
+      "ane_ms": 0.6084579945309088,
+      "cpu_ms": 3.086707991315052,
+      "assigned": "ane"
+    },
+    {
+      "name": "block2_conv2_bn",
+      "gpu_ms": 1.1487080046208575,
+      "ane_ms": 0.6272919999901205,
+      "cpu_ms": 2.0843340025749058,
+      "assigned": "gpu"
+    },
+    {
+      "name": "block3_conv1_bn_relu",
+      "gpu_ms": 1.49291600973811,
+      "ane_ms": 1.231709000421688,
+      "cpu_ms": 9.846500004641712,
+      "assigned": "ane"
+    },
+    {
+      "name": "block3_conv2_bn",
+      "gpu_ms": 1.1538749968167394,
+      "ane_ms": 0.49849999777507037,
+      "cpu_ms": 2.7562089962884784,
+      "assigned": "gpu"
+    },
+    {
+      "name": "block4_conv1_bn_relu",
+      "gpu_ms": 1.3945410028100014,
+      "ane_ms": 0.5263329949229956,
+      "cpu_ms": 2.1551250101765618,
+      "assigned": "ane"
+    },
+    {
+      "name": "block4_conv2_bn",
+      "gpu_ms": 1.1573749943636358,
+      "ane_ms": 0.46912499237805605,
+      "cpu_ms": 1.8320829985896125,
+      "assigned": "ane"
+    },
+    {
+      "name": "block5_conv1_bn_relu",
+      "gpu_ms": 1.4410419971682131,
+      "ane_ms": 0.5283749924274161,
+      "cpu_ms": 1.798874989617616,
+      "assigned": "ane"
+    },
+    {
+      "name": "block5_conv2_bn",
+      "gpu_ms": 1.4659169974038377,
+      "ane_ms": 0.5832079914398491,
+      "cpu_ms": 1.8198329926235601,
+      "assigned": "ane"
+    },
+    {
+      "name": "block6_conv1_bn_relu",
+      "gpu_ms": 1.1610419896896929,
+      "ane_ms": 0.4749580111820251,
+      "cpu_ms": 1.7383750091539696,
+      "assigned": "ane"
+    },
+    {
+      "name": "block6_conv2_bn",
+      "gpu_ms": 1.3794169935863465,
+      "ane_ms": 0.5763749941252172,
+      "cpu_ms": 1.8288749997736886,
+      "assigned": "ane"
+    },
+    {
+      "name": "block7_conv1_bn_relu",
+      "gpu_ms": 1.1949170002480969,
+      "ane_ms": 0.8990420028567314,
+      "cpu_ms": 3.3419169922126457,
+      "assigned": "gpu"
+    },
+    {
+      "name": "block7_conv2_bn",
+      "gpu_ms": 1.2350000033620745,
+      "ane_ms": 0.47979199734982103,
+      "cpu_ms": 2.168874998460524,
+      "assigned": "ane"
+    },
+    {
+      "name": "block8_conv1_bn_relu",
+      "gpu_ms": 1.246875006472692,
+      "ane_ms": 0.49229100113734603,
+      "cpu_ms": 1.9530839927028865,
+      "assigned": "ane"
+    },
+    {
+      "name": "block8_conv2_bn",
+      "gpu_ms": 1.1704579956131056,
+      "ane_ms": 0.5089579935884103,
+      "cpu_ms": 1.711834003799595,
+      "assigned": "ane"
+    },
+    {
+      "name": "block9_conv1_bn_relu",
+      "gpu_ms": 1.1956250091316178,
+      "ane_ms": 0.4842080088565126,
+      "cpu_ms": 2.1458340052049607,
+      "assigned": "ane"
+    },
+    {
+      "name": "block9_conv2_bn",
+      "gpu_ms": 1.1796250037150458,
+      "ane_ms": 0.4588750016409904,
+      "cpu_ms": 1.7292919947067276,
+      "assigned": "ane"
+    },
+    {
+      "name": "block10_conv1_bn_relu",
+      "gpu_ms": 1.1757920001400635,
+      "ane_ms": 0.4982920072507113,
+      "cpu_ms": 1.6539999924134463,
+      "assigned": "ane"
+    },
+    {
+      "name": "block10_conv2_bn",
+      "gpu_ms": 1.1907089938176796,
+      "ane_ms": 0.5361250077839941,
+      "cpu_ms": 2.149625011952594,
+      "assigned": "ane"
+    },
+    {
+      "name": "block11_conv1_bn_relu",
+      "gpu_ms": 1.1862089886562899,
+      "ane_ms": 0.4850830009672791,
+      "cpu_ms": 1.7334159929305315,
+      "assigned": "ane"
+    },
+    {
+      "name": "block11_conv2_bn",
+      "gpu_ms": 1.1797500046668574,
+      "ane_ms": 0.4527080018306151,
+      "cpu_ms": 3.523457999108359,
+      "assigned": "ane"
+    },
+    {
+      "name": "block12_conv1_bn_relu",
+      "gpu_ms": 1.1731669947039336,
+      "ane_ms": 0.4514169995673001,
+      "cpu_ms": 1.8285419937456027,
+      "assigned": "ane"
+    },
+    {
+      "name": "block12_conv2_bn",
+      "gpu_ms": 1.1787090043071657,
+      "ane_ms": 0.47037500189617276,
+      "cpu_ms": 2.577000006567687,
+      "assigned": "ane"
+    },
+    {
+      "name": "block13_conv1_bn_relu",
+      "gpu_ms": 1.029958002618514,
+      "ane_ms": 0.44820900075137615,
+      "cpu_ms": 5.162958012078889,
+      "assigned": "ane"
+    },
+    {
+      "name": "block13_conv2_bn",
+      "gpu_ms": 1.6137080092448741,
+      "ane_ms": 0.46275000204332173,
+      "cpu_ms": 5.2273749897722155,
+      "assigned": "ane"
+    },
+    {
+      "name": "block14_conv1_bn_relu",
+      "gpu_ms": 1.6281250136671588,
+      "ane_ms": 0.44241599971428514,
+      "cpu_ms": 4.196249996311963,
+      "assigned": "ane"
+    },
+    {
+      "name": "block14_conv2_bn",
+      "gpu_ms": 1.6140420048031956,
+      "ane_ms": 0.43654099863488227,
+      "cpu_ms": 4.869290991337039,
+      "assigned": "ane"
+    },
+    {
+      "name": "block15_conv1_bn_relu",
+      "gpu_ms": 1.6288750048261136,
+      "ane_ms": 0.45304100785870105,
+      "cpu_ms": 5.490041003213264,
+      "assigned": "ane"
+    },
+    {
+      "name": "block15_conv2_bn",
+      "gpu_ms": 1.6206250002142042,
+      "ane_ms": 0.47700000868644565,
+      "cpu_ms": 4.174000001512468,
+      "assigned": "ane"
+    }
+  ]
+}
