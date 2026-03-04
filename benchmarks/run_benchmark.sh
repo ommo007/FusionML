@@ -334,7 +334,9 @@ results["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
 chip_clean = chip.replace(" ", "_").replace("(", "").replace(")", "")
 out_name = f"fusionml_results_{chip_clean}.json"
-out_path = os.path.join(os.path.expanduser("~"), out_name)
+results_dir = os.path.join(os.path.dirname(os.path.abspath("python")), "benchmarks", "results")
+os.makedirs(results_dir, exist_ok=True)
+out_path = os.path.join(results_dir, out_name)
 with open(out_path, "w") as f:
     json.dump(results, f, indent=2)
 
