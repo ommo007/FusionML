@@ -1,0 +1,415 @@
+{
+  "device": {
+    "chip": "Apple M4 Pro",
+    "ram_gb": 24,
+    "gpu_cores": 16,
+    "macos": "26.2",
+    "python": "3.9.6"
+  },
+  "benchmarks": {
+    "resnet50": {
+      "model": "ResNet-50",
+      "layers": 32,
+      "compile_s": 3.9,
+      "schedule": {
+        "gpu": 1,
+        "ane": 31,
+        "cpu": 0
+      },
+      "gpu": {
+        "median_ms": 10.41,
+        "min_ms": 10.18,
+        "max_ms": 12.05,
+        "std_ms": 0.62
+      },
+      "ane": {
+        "median_ms": 7.42,
+        "min_ms": 7.14,
+        "max_ms": 7.59,
+        "std_ms": 0.11
+      },
+      "pipeline": {
+        "median_ms": 8.12,
+        "min_ms": 7.82,
+        "max_ms": 9.39,
+        "std_ms": 0.45
+      },
+      "cpu": {
+        "median_ms": 16.12,
+        "min_ms": 15.96,
+        "max_ms": 16.47,
+        "std_ms": 0.15
+      },
+      "per_layer": [
+        {
+          "name": "block0_conv1_bn_relu",
+          "gpu_ms": 1.0093750000006452,
+          "ane_ms": 0.3477919999994583,
+          "cpu_ms": 0.6240420000001023,
+          "assigned": "ane"
+        },
+        {
+          "name": "block0_conv2_bn",
+          "gpu_ms": 1.3078749999992922,
+          "ane_ms": 0.3306670000000622,
+          "cpu_ms": 0.6352090000003585,
+          "assigned": "ane"
+        },
+        {
+          "name": "block1_conv1_bn_relu",
+          "gpu_ms": 0.8917920000000024,
+          "ane_ms": 0.2952500000006353,
+          "cpu_ms": 0.6185829999996173,
+          "assigned": "ane"
+        },
+        {
+          "name": "block1_conv2_bn",
+          "gpu_ms": 0.6114159999999202,
+          "ane_ms": 0.2983340000000112,
+          "cpu_ms": 0.5809159999996538,
+          "assigned": "ane"
+        },
+        {
+          "name": "block2_conv1_bn_relu",
+          "gpu_ms": 0.6788750000001897,
+          "ane_ms": 0.30954100000002427,
+          "cpu_ms": 0.6639579999996315,
+          "assigned": "ane"
+        },
+        {
+          "name": "block2_conv2_bn",
+          "gpu_ms": 0.8513329999999542,
+          "ane_ms": 0.25033300000032455,
+          "cpu_ms": 0.568083000000108,
+          "assigned": "ane"
+        },
+        {
+          "name": "block3_conv1_bn_relu",
+          "gpu_ms": 0.3060000000001395,
+          "ane_ms": 0.2786249999999768,
+          "cpu_ms": 0.8821249999995118,
+          "assigned": "gpu"
+        },
+        {
+          "name": "block3_conv2_bn",
+          "gpu_ms": 0.7970000000003807,
+          "ane_ms": 0.2216659999998427,
+          "cpu_ms": 0.4253330000008049,
+          "assigned": "ane"
+        },
+        {
+          "name": "block4_conv1_bn_relu",
+          "gpu_ms": 0.801041999999974,
+          "ane_ms": 0.23370799999966607,
+          "cpu_ms": 0.42537500000072725,
+          "assigned": "ane"
+        },
+        {
+          "name": "block4_conv2_bn",
+          "gpu_ms": 0.5833749999997195,
+          "ane_ms": 0.24620900000016377,
+          "cpu_ms": 0.43970900000012136,
+          "assigned": "ane"
+        },
+        {
+          "name": "block5_conv1_bn_relu",
+          "gpu_ms": 0.6108329999996442,
+          "ane_ms": 0.22745800000034677,
+          "cpu_ms": 0.417875000000123,
+          "assigned": "ane"
+        },
+        {
+          "name": "block5_conv2_bn",
+          "gpu_ms": 0.6069169999998181,
+          "ane_ms": 0.22895800000011235,
+          "cpu_ms": 0.3944170000007574,
+          "assigned": "ane"
+        },
+        {
+          "name": "block6_conv1_bn_relu",
+          "gpu_ms": 0.8002500000001689,
+          "ane_ms": 0.2384590000001907,
+          "cpu_ms": 0.42625000000029445,
+          "assigned": "ane"
+        },
+        {
+          "name": "block6_conv2_bn",
+          "gpu_ms": 0.7091250000001992,
+          "ane_ms": 0.20737500000045372,
+          "cpu_ms": 0.42695800000025486,
+          "assigned": "ane"
+        },
+        {
+          "name": "block7_conv1_bn_relu",
+          "gpu_ms": 0.5746670000004173,
+          "ane_ms": 0.194207999999918,
+          "cpu_ms": 0.5565000000000708,
+          "assigned": "ane"
+        },
+        {
+          "name": "block7_conv2_bn",
+          "gpu_ms": 0.7269580000004439,
+          "ane_ms": 0.1956659999997612,
+          "cpu_ms": 0.3924169999995897,
+          "assigned": "ane"
+        },
+        {
+          "name": "block8_conv1_bn_relu",
+          "gpu_ms": 0.8391250000006067,
+          "ane_ms": 0.19366599999948164,
+          "cpu_ms": 0.42070899999924194,
+          "assigned": "ane"
+        },
+        {
+          "name": "block8_conv2_bn",
+          "gpu_ms": 0.3932080000002003,
+          "ane_ms": 0.2107080000000039,
+          "cpu_ms": 0.41966700000006796,
+          "assigned": "ane"
+        },
+        {
+          "name": "block9_conv1_bn_relu",
+          "gpu_ms": 0.7523750000002494,
+          "ane_ms": 0.2397920000003495,
+          "cpu_ms": 0.43379099999985016,
+          "assigned": "ane"
+        },
+        {
+          "name": "block9_conv2_bn",
+          "gpu_ms": 0.7945000000004754,
+          "ane_ms": 0.19833300000016152,
+          "cpu_ms": 0.3893340000002965,
+          "assigned": "ane"
+        },
+        {
+          "name": "block10_conv1_bn_relu",
+          "gpu_ms": 0.8596250000003636,
+          "ane_ms": 0.23116699999992107,
+          "cpu_ms": 0.41987500000040257,
+          "assigned": "ane"
+        },
+        {
+          "name": "block10_conv2_bn",
+          "gpu_ms": 0.9629159999997583,
+          "ane_ms": 0.20029199999971325,
+          "cpu_ms": 0.43766600000072486,
+          "assigned": "ane"
+        },
+        {
+          "name": "block11_conv1_bn_relu",
+          "gpu_ms": 0.8641659999995,
+          "ane_ms": 0.20316700000044818,
+          "cpu_ms": 0.4134579999997001,
+          "assigned": "ane"
+        },
+        {
+          "name": "block11_conv2_bn",
+          "gpu_ms": 0.8140420000000148,
+          "ane_ms": 0.20512499999991718,
+          "cpu_ms": 0.3893340000002965,
+          "assigned": "ane"
+        },
+        {
+          "name": "block12_conv1_bn_relu",
+          "gpu_ms": 0.8768750000003322,
+          "ane_ms": 0.21741699999999753,
+          "cpu_ms": 0.4734580000000932,
+          "assigned": "ane"
+        },
+        {
+          "name": "block12_conv2_bn",
+          "gpu_ms": 0.9731669999997195,
+          "ane_ms": 0.194458000000175,
+          "cpu_ms": 0.3968749999998522,
+          "assigned": "ane"
+        },
+        {
+          "name": "block13_conv1_bn_relu",
+          "gpu_ms": 1.404624999999271,
+          "ane_ms": 0.20091699999991164,
+          "cpu_ms": 0.494458000000364,
+          "assigned": "ane"
+        },
+        {
+          "name": "block13_conv2_bn",
+          "gpu_ms": 1.0587920000002526,
+          "ane_ms": 0.16200000000043957,
+          "cpu_ms": 0.3984590000003507,
+          "assigned": "ane"
+        },
+        {
+          "name": "block14_conv1_bn_relu",
+          "gpu_ms": 1.3994579999998535,
+          "ane_ms": 0.16554100000032435,
+          "cpu_ms": 0.41687499999998323,
+          "assigned": "ane"
+        },
+        {
+          "name": "block14_conv2_bn",
+          "gpu_ms": 1.0926659999999089,
+          "ane_ms": 0.1587909999996029,
+          "cpu_ms": 0.4171670000001626,
+          "assigned": "ane"
+        },
+        {
+          "name": "block15_conv1_bn_relu",
+          "gpu_ms": 1.201542000000444,
+          "ane_ms": 0.12320799999976373,
+          "cpu_ms": 0.40558300000004266,
+          "assigned": "ane"
+        },
+        {
+          "name": "block15_conv2_bn",
+          "gpu_ms": 1.0751249999998436,
+          "ane_ms": 0.1358329999998631,
+          "cpu_ms": 0.3908749999999017,
+          "assigned": "ane"
+        }
+      ]
+    },
+    "bert_base": {
+      "model": "BERT-base",
+      "ops": 72,
+      "config": {
+        "B": 1,
+        "L": 128,
+        "D": 768,
+        "H": 12,
+        "D_FF": 3072
+      },
+      "compile_s": 10.9,
+      "schedule": {
+        "gpu": 0,
+        "ane": 7,
+        "cpu": 65
+      },
+      "gpu": {
+        "median_ms": 16.16,
+        "min_ms": 16.03,
+        "max_ms": 17.73,
+        "std_ms": 0.65
+      },
+      "ane": {
+        "median_ms": 11.54,
+        "min_ms": 11.3,
+        "max_ms": 13.11,
+        "std_ms": 0.47
+      },
+      "pipeline": {
+        "median_ms": 16.23,
+        "min_ms": 16.0,
+        "max_ms": 17.89,
+        "std_ms": 0.47
+      },
+      "cpu": {
+        "median_ms": 15.51,
+        "min_ms": 15.27,
+        "max_ms": 15.88,
+        "std_ms": 0.19
+      }
+    },
+    "matmul_scaling": {
+      "128": {
+        "gpu": {
+          "median_ms": 0.43,
+          "min_ms": 0.14,
+          "max_ms": 0.52,
+          "std_ms": 0.16
+        },
+        "ane": {
+          "median_ms": 0.04,
+          "min_ms": 0.04,
+          "max_ms": 0.07,
+          "std_ms": 0.01
+        },
+        "cpu": {
+          "median_ms": 0.01,
+          "min_ms": 0.01,
+          "max_ms": 0.01,
+          "std_ms": 0.0
+        }
+      },
+      "256": {
+        "gpu": {
+          "median_ms": 0.25,
+          "min_ms": 0.22,
+          "max_ms": 0.96,
+          "std_ms": 0.18
+        },
+        "ane": {
+          "median_ms": 0.06,
+          "min_ms": 0.06,
+          "max_ms": 0.09,
+          "std_ms": 0.01
+        },
+        "cpu": {
+          "median_ms": 0.03,
+          "min_ms": 0.02,
+          "max_ms": 0.03,
+          "std_ms": 0.0
+        }
+      },
+      "512": {
+        "gpu": {
+          "median_ms": 0.4,
+          "min_ms": 0.26,
+          "max_ms": 0.45,
+          "std_ms": 0.07
+        },
+        "ane": {
+          "median_ms": 0.15,
+          "min_ms": 0.15,
+          "max_ms": 0.16,
+          "std_ms": 0.0
+        },
+        "cpu": {
+          "median_ms": 0.11,
+          "min_ms": 0.1,
+          "max_ms": 0.11,
+          "std_ms": 0.0
+        }
+      },
+      "1024": {
+        "gpu": {
+          "median_ms": 0.55,
+          "min_ms": 0.53,
+          "max_ms": 1.07,
+          "std_ms": 0.21
+        },
+        "ane": {
+          "median_ms": 0.63,
+          "min_ms": 0.59,
+          "max_ms": 1.21,
+          "std_ms": 0.15
+        },
+        "cpu": {
+          "median_ms": 0.68,
+          "min_ms": 0.67,
+          "max_ms": 0.71,
+          "std_ms": 0.01
+        }
+      },
+      "2048": {
+        "gpu": {
+          "median_ms": 3.42,
+          "min_ms": 3.36,
+          "max_ms": 4.06,
+          "std_ms": 0.24
+        },
+        "ane": {
+          "median_ms": 2.4,
+          "min_ms": 2.31,
+          "max_ms": 2.79,
+          "std_ms": 0.11
+        },
+        "cpu": {
+          "median_ms": 5.44,
+          "min_ms": 5.42,
+          "max_ms": 7.56,
+          "std_ms": 0.53
+        }
+      }
+    }
+  },
+  "timestamp": "2026-03-04T11:44:11"
+}
