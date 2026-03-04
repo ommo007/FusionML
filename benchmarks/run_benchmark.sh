@@ -9,7 +9,7 @@
 #   chmod +x run_benchmark.sh
 #   ./run_benchmark.sh
 #
-# Results will be saved to: fusionml_results_<chip>.json
+# Results will be saved to: ~/fusionml_results_<chip>.json
 # Please share this file with Om.
 # ============================================================
 
@@ -35,7 +35,6 @@ CORES_EFF=$(sysctl -n hw.perflevel1.logicalcpu 2>/dev/null || echo "?")
 RAM_BYTES=$(sysctl -n hw.memsize 2>/dev/null || echo "0")
 RAM_GB=$((RAM_BYTES / 1073741824))
 OS_VER=$(sw_vers -productVersion 2>/dev/null || echo "Unknown")
-HOSTNAME_SHORT=$(hostname -s 2>/dev/null || echo "unknown")
 
 echo -e "${GREEN}Hardware detected:${NC}"
 echo "  Chip:     $CHIP"
@@ -46,7 +45,6 @@ echo ""
 
 # ── 2. Setup environment ────────────────────────────────────
 WORK_DIR=$(mktemp -d)
-RESULTS_FILE="fusionml_results_$(echo "$CHIP" | tr ' ' '_' | tr -cd '[:alnum:]_').json"
 
 echo -e "${YELLOW}Setting up in $WORK_DIR ...${NC}"
 
@@ -80,7 +78,7 @@ echo ""
 echo -e "${CYAN}Running benchmarks (this takes ~2-3 minutes)...${NC}"
 echo ""
 
-python3 -u - <<'PYEOF'
+python3 -u -W ignore 2>/dev/null - <<'PYEOF'
 import numpy as np
 import time
 import json
@@ -88,22 +86,25 @@ import sys
 import os
 import platform
 import subprocess
+import warnings
+warnings.filterwarnings("ignore")
+
+# Suppress CoreML stderr noise
+import io, contextlib
 
 sys.path.insert(0, "python")
-import warnings; warnings.filterwarnings("ignore")
 
 log = lambda m: print(m, flush=True)
 
 # ── Detect hardware ──
 def get_chip():
     try:
-        out = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
-        return out
-    except Exception:
-        return platform.processor()
+        return subprocess.check_output(
+            ["sysctl", "-n", "machdep.cpu.brand_string"]
+        ).decode().strip()
+    except: return platform.processor()
 
 def get_gpu_cores():
-    """Try to detect GPU core count from system_profiler."""
     try:
         out = subprocess.check_output(
             ["system_profiler", "SPDisplaysDataType"], text=True, timeout=5
@@ -111,39 +112,25 @@ def get_gpu_cores():
         for line in out.split("\n"):
             if "Total Number of Cores" in line:
                 return int(line.split(":")[-1].strip())
-    except Exception:
-        pass
+    except: pass
     return -1
-
-def get_ane_cores():
-    """ANE core count (16 on all current Apple Silicon)."""
-    return 16
 
 chip = get_chip()
 ram_gb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // (1024**3)
 gpu_cores = get_gpu_cores()
-ane_cores = get_ane_cores()
 
 device_info = {
-    "chip": chip,
-    "ram_gb": ram_gb,
-    "gpu_cores": gpu_cores,
-    "ane_cores": ane_cores,
-    "macos": platform.mac_ver()[0],
-    "python": platform.python_version(),
+    "chip": chip, "ram_gb": ram_gb, "gpu_cores": gpu_cores,
+    "macos": platform.mac_ver()[0], "python": platform.python_version(),
 }
 
 log(f"Device: {chip} ({ram_gb}GB RAM, {gpu_cores} GPU cores)")
 
-# ── Import backends ──
 import mlx.core as mx
 from fusionml._metal.pipeline_scheduler import PipelineScheduler, build_resnet_block, LayerConfig
-from fusionml._metal.ane_backend import ANECompiledLayer, HAS_COREML, ane_device_info
+from fusionml._metal.ane_backend import ANECompiledLayer, HAS_COREML
 
-log(f"MLX: {mx.__version__}")
-log(f"CoreML: {HAS_COREML}")
-if not HAS_COREML:
-    log("WARNING: CoreML not available — ANE results will be missing")
+log(f"MLX: {mx.__version__}, CoreML: {HAS_COREML}")
 
 ITERS = 15
 WARMUP = 5
@@ -184,44 +171,59 @@ for i in range(2):
 for layer in all_layers:
     sched.add_layer(layer)
 
-log(f"  Compiling {len(all_layers)} layers...")
+log(f"  Compiling {len(all_layers)} layers (please wait)...")
 t0 = time.time()
-sched.compile(profile_iters=5)
+
+# Suppress CoreML noise during compilation
+with contextlib.redirect_stderr(io.StringIO()):
+    sched.compile(profile_iters=5)
+
 compile_s = time.time() - t0
 log(f"  Compiled in {compile_s:.1f}s")
 
-x = np.random.randn(1, 64, 56, 56).astype(np.float32) * 0.02
+# Pre-generate correct dummy inputs for each layer
+layer_dummies = []
+for layer in all_layers:
+    layer_dummies.append(np.random.randn(*layer.input_shape).astype(np.float32) * 0.02)
 
-# All GPU
+# All GPU — each layer gets its own correct-shape input
+def run_all_gpu():
+    for i, exe in enumerate(sched._gpu_execs):
+        exe.run(layer_dummies[i])
 log("  Benchmarking GPU...")
-gpu_r = bench(lambda: [exe.run(x) for exe in sched._gpu_execs][-1])
+gpu_r = bench(run_all_gpu)
 log(f"    All GPU:  {gpu_r['median_ms']:.2f}ms")
 
 # All ANE
+def run_all_ane():
+    for i, exe in enumerate(sched._ane_execs):
+        exe.run(layer_dummies[i])
 log("  Benchmarking ANE...")
-ane_r = bench(lambda: [exe.run(x) for exe in sched._ane_execs][-1])
+ane_r = bench(run_all_ane)
 log(f"    All ANE:  {ane_r['median_ms']:.2f}ms")
 
-# Pipeline
+# Pipeline (uses sched.run which chains properly)
+x_init = np.random.randn(1, 64, 56, 56).astype(np.float32) * 0.02
 log("  Benchmarking Pipeline...")
-pipe_r = bench(lambda: sched.run(x))
+pipe_r = bench(lambda: sched.run(x_init))
 log(f"    Pipeline: {pipe_r['median_ms']:.2f}ms")
 
 # All CPU
+def run_all_cpu():
+    for i, exe in enumerate(sched._cpu_execs):
+        exe.run(layer_dummies[i])
 log("  Benchmarking CPU...")
-cpu_r = bench(lambda: [exe.run(x) for exe in sched._cpu_execs][-1])
+cpu_r = bench(run_all_cpu)
 log(f"    All CPU:  {cpu_r['median_ms']:.2f}ms")
 
 s = sched.summary()
-resnet_results = {
-    "model": "ResNet-50",
-    "layers": len(all_layers),
+results["benchmarks"]["resnet50"] = {
+    "model": "ResNet-50", "layers": len(all_layers),
     "compile_seconds": compile_s,
     "schedule": {"gpu": s["gpu_layers"], "ane": s["ane_layers"], "cpu": s["cpu_layers"]},
     "gpu": gpu_r, "ane": ane_r, "pipeline": pipe_r, "cpu": cpu_r,
     "per_layer": s["profiles"],
 }
-results["benchmarks"]["resnet50"] = resnet_results
 
 # ════════════════════════════════════════════════════════════
 # BENCHMARK 2: BERT-base (72 matmul ops)
@@ -248,47 +250,45 @@ for li in range(12):
 for layer in bert_layers:
     sched2.add_layer(layer)
 
-log(f"  Compiling {len(bert_layers)} ops...")
+log(f"  Compiling {len(bert_layers)} ops (please wait)...")
 t0 = time.time()
-sched2.compile(profile_iters=5)
+with contextlib.redirect_stderr(io.StringIO()):
+    sched2.compile(profile_iters=5)
 compile_s2 = time.time() - t0
 log(f"  Compiled in {compile_s2:.1f}s")
 
-x_d = np.random.randn(B*L, D).astype(np.float32) * 0.02
-x_ff = np.random.randn(B*L, D_FF).astype(np.float32) * 0.02
+# Per-layer dummy inputs
+bert_dummies = []
+for layer in bert_layers:
+    bert_dummies.append(np.random.randn(*layer.input_shape).astype(np.float32) * 0.02)
 
-def run_all(execs):
+def run_bert_all(execs):
     for i, exe in enumerate(execs):
-        layer = bert_layers[i]
-        inp = x_ff if layer.input_shape[-1] == D_FF else x_d
-        exe.run(inp)
+        exe.run(bert_dummies[i])
 
 log("  Benchmarking GPU...")
-gpu_r2 = bench(lambda: run_all(sched2._gpu_execs))
+gpu_r2 = bench(lambda: run_bert_all(sched2._gpu_execs))
 log(f"    All GPU:  {gpu_r2['median_ms']:.2f}ms")
 
 log("  Benchmarking ANE...")
-ane_r2 = bench(lambda: run_all(sched2._ane_execs))
+ane_r2 = bench(lambda: run_bert_all(sched2._ane_execs))
 log(f"    All ANE:  {ane_r2['median_ms']:.2f}ms")
 
-log("  Benchmarking Pipeline...")
-def run_pipe2():
+def run_bert_pipe():
     for i, entry in enumerate(sched2.schedule):
         exe = sched2._get_executor(entry)
-        layer = bert_layers[i]
-        inp = x_ff if layer.input_shape[-1] == D_FF else x_d
-        exe.run(inp)
-pipe_r2 = bench(run_pipe2)
+        exe.run(bert_dummies[i])
+log("  Benchmarking Pipeline...")
+pipe_r2 = bench(run_bert_pipe)
 log(f"    Pipeline: {pipe_r2['median_ms']:.2f}ms")
 
 log("  Benchmarking CPU...")
-cpu_r2 = bench(lambda: run_all(sched2._cpu_execs))
+cpu_r2 = bench(lambda: run_bert_all(sched2._cpu_execs))
 log(f"    All CPU:  {cpu_r2['median_ms']:.2f}ms")
 
 s2 = sched2.summary()
 results["benchmarks"]["bert_base"] = {
-    "model": "BERT-base",
-    "ops": len(bert_layers),
+    "model": "BERT-base", "ops": len(bert_layers),
     "config": {"B": B, "L": L, "D": D, "H": H, "D_FF": D_FF},
     "compile_seconds": compile_s2,
     "schedule": {"gpu": s2["gpu_layers"], "ane": s2["ane_layers"], "cpu": s2["cpu_layers"]},
@@ -296,7 +296,7 @@ results["benchmarks"]["bert_base"] = {
 }
 
 # ════════════════════════════════════════════════════════════
-# BENCHMARK 3: Matmul Scaling (latency vs size)
+# BENCHMARK 3: Matmul Scaling
 # ════════════════════════════════════════════════════════════
 log("\n" + "="*60)
 log("  BENCHMARK 3: Matmul Scaling")
@@ -307,22 +307,20 @@ matmul_results = {}
 
 for N in sizes:
     a = np.random.randn(N, N).astype(np.float32) * 0.02
-    b = np.random.randn(N, N).astype(np.float32) * 0.02
-    a_mx = mx.array(a); b_mx = mx.array(b)
+    b_np = np.random.randn(N, N).astype(np.float32) * 0.02
+    a_mx = mx.array(a); b_mx = mx.array(b_np)
 
-    # GPU
     def gpu_mm(): r = a_mx @ b_mx; mx.eval(r)
     g = bench(gpu_mm)
 
-    # ANE
     if HAS_COREML:
-        mm_layer = ANECompiledLayer.matmul(M=N, K=N, weight=b)
+        with contextlib.redirect_stderr(io.StringIO()):
+            mm_layer = ANECompiledLayer.matmul(M=N, K=N, weight=b_np)
         an = bench(lambda: mm_layer(a))
     else:
         an = {"median_ms": -1, "min_ms": -1, "max_ms": -1, "std_ms": -1}
 
-    # CPU
-    c = bench(lambda: np.matmul(a, b))
+    c = bench(lambda: np.matmul(a, b_np))
 
     matmul_results[str(N)] = {"gpu": g, "ane": an, "cpu": c}
     log(f"  {N:>5}x{N}: GPU={g['median_ms']:.2f}ms  ANE={an['median_ms']:.2f}ms  CPU={c['median_ms']:.2f}ms")
@@ -330,19 +328,16 @@ for N in sizes:
 results["benchmarks"]["matmul_scaling"] = matmul_results
 
 # ════════════════════════════════════════════════════════════
-# SAVE RESULTS
+# SAVE
 # ════════════════════════════════════════════════════════════
 results["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-# Save to original dir (not temp)
-out_name = f"fusionml_results_{chip.replace(' ', '_').replace('(', '').replace(')', '')}.json"
-# Try saving to home dir
-home = os.path.expanduser("~")
-out_path = os.path.join(home, out_name)
+chip_clean = chip.replace(" ", "_").replace("(", "").replace(")", "")
+out_name = f"fusionml_results_{chip_clean}.json"
+out_path = os.path.join(os.path.expanduser("~"), out_name)
 with open(out_path, "w") as f:
     json.dump(results, f, indent=2)
 
-# Also print to stdout for capture
 log("\n" + "="*60)
 log("  SUMMARY")
 log("="*60)
@@ -350,28 +345,18 @@ log(f"  Device:     {chip}")
 log(f"  ResNet-50:  GPU={gpu_r['median_ms']:.2f}ms  ANE={ane_r['median_ms']:.2f}ms  Pipeline={pipe_r['median_ms']:.2f}ms")
 log(f"  BERT-base:  GPU={gpu_r2['median_ms']:.2f}ms  ANE={ane_r2['median_ms']:.2f}ms  Pipeline={pipe_r2['median_ms']:.2f}ms")
 
-ane_vs_gpu_resnet = (gpu_r['median_ms'] - ane_r['median_ms']) / gpu_r['median_ms'] * 100
-ane_vs_gpu_bert = (gpu_r2['median_ms'] - ane_r2['median_ms']) / gpu_r2['median_ms'] * 100
-log(f"  ANE speedup vs GPU: ResNet={ane_vs_gpu_resnet:+.1f}%, BERT={ane_vs_gpu_bert:+.1f}%")
+ane_r_pct = (gpu_r['median_ms'] - ane_r['median_ms']) / gpu_r['median_ms'] * 100
+ane_b_pct = (gpu_r2['median_ms'] - ane_r2['median_ms']) / gpu_r2['median_ms'] * 100
+log(f"  ANE vs GPU: ResNet={ane_r_pct:+.1f}%, BERT={ane_b_pct:+.1f}%")
 log(f"\n  Results saved to: {out_path}")
-log(f"  Please share this file with Om!")
+log(f"  Please share this file with Om! 🙏")
 PYEOF
 
-# ── 4. Cleanup ──────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════╗"
 echo -e "║  Done! Results saved to your home directory.         ║"
 echo -e "║  Please share the JSON file with Om.                 ║"
 echo -e "╚══════════════════════════════════════════════════════╝${NC}"
-echo ""
-
-# Copy results from temp to where the user ran the script
-CHIP_CLEAN=$(echo "$CHIP" | tr ' ()' '___' | tr -cd '[:alnum:]_')
-RESULT_HOME="$HOME/fusionml_results_${CHIP_CLEAN}.json"
-if [ -f "$RESULT_HOME" ]; then
-    cp "$RESULT_HOME" "./" 2>/dev/null || true
-    echo -e "Results file: ${CYAN}${RESULT_HOME}${NC}"
-fi
 
 # Cleanup temp dir
 rm -rf "$WORK_DIR"
