@@ -24,7 +24,7 @@ NC='\033[0m'
 echo -e "${CYAN}"
 echo "╔══════════════════════════════════════════════════════╗"
 echo "║     FusionML Tri-Compute Benchmark                   ║"
-echo "║     NeurIPS 2026 Cross-Device Study                  ß║"
+echo "║     NeurIPS 2026 Cross-Device Study                  ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -44,6 +44,11 @@ echo "  macOS:    $OS_VER"
 echo ""
 
 # ── 2. Setup environment ────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RESULTS_DIR="${SCRIPT_DIR}/results"
+mkdir -p "$RESULTS_DIR"
+export RESULTS_DIR
+
 WORK_DIR=$(mktemp -d)
 
 echo -e "${YELLOW}Setting up in $WORK_DIR ...${NC}"
@@ -334,7 +339,7 @@ results["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
 chip_clean = chip.replace(" ", "_").replace("(", "").replace(")", "")
 out_name = f"fusionml_results_{chip_clean}.json"
-results_dir = os.path.join(os.path.dirname(os.path.abspath("python")), "benchmarks", "results")
+results_dir = os.environ.get("RESULTS_DIR", os.path.join(os.getcwd(), "benchmarks", "results"))
 os.makedirs(results_dir, exist_ok=True)
 out_path = os.path.join(results_dir, out_name)
 with open(out_path, "w") as f:
@@ -356,7 +361,7 @@ PYEOF
 
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════╗"
-echo -e "║  Done! Results saved to your home directory.         ║"
+echo -e "║  Done! Results saved to benchmarks/results/          ║"
 echo -e "║  Please share the JSON file with Om.                 ║"
 echo -e "╚══════════════════════════════════════════════════════╝${NC}"
 
