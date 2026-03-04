@@ -339,11 +339,21 @@ results["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
 chip_clean = chip.replace(" ", "_").replace("(", "").replace(")", "")
 out_name = f"fusionml_results_{chip_clean}.json"
-results_dir = os.environ.get("RESULTS_DIR", os.path.join(os.getcwd(), "benchmarks", "results"))
-os.makedirs(results_dir, exist_ok=True)
-out_path = os.path.join(results_dir, out_name)
-with open(out_path, "w") as f:
+
+# Always save to home dir (survives temp dir cleanup)
+home_path = os.path.join(os.path.expanduser("~"), out_name)
+with open(home_path, "w") as f:
     json.dump(results, f, indent=2)
+
+# Also save to RESULTS_DIR if it's outside the temp dir
+results_dir = os.environ.get("RESULTS_DIR", "")
+saved_to = home_path
+if results_dir and "/tmp" not in results_dir and "/var/folders" not in results_dir:
+    os.makedirs(results_dir, exist_ok=True)
+    alt_path = os.path.join(results_dir, out_name)
+    with open(alt_path, "w") as f:
+        json.dump(results, f, indent=2)
+    saved_to = alt_path
 
 log("\n" + "="*60)
 log("  SUMMARY")
@@ -355,7 +365,7 @@ log(f"  BERT-base:  GPU={gpu_r2['median_ms']:.2f}ms  ANE={ane_r2['median_ms']:.2
 ane_r_pct = (gpu_r['median_ms'] - ane_r['median_ms']) / gpu_r['median_ms'] * 100
 ane_b_pct = (gpu_r2['median_ms'] - ane_r2['median_ms']) / gpu_r2['median_ms'] * 100
 log(f"  ANE vs GPU: ResNet={ane_r_pct:+.1f}%, BERT={ane_b_pct:+.1f}%")
-log(f"\n  Results saved to: {out_path}")
+log(f"\n  Results saved to: {saved_to}")
 log(f"  Please share this file with Om! 🙏")
 PYEOF
 
