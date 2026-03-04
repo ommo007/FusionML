@@ -23,8 +23,8 @@ NC='\033[0m'
 
 echo -e "${CYAN}"
 echo "╔══════════════════════════════════════════════════════╗"
-echo "║     FusionML Tri-Compute Benchmark                  ║"
-echo "║     NeurIPS 2026 Cross-Device Study                 ║"
+echo "║     FusionML Tri-Compute Benchmark                   ║"
+echo "║     NeurIPS 2026 Cross-Device Study                  ß║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
