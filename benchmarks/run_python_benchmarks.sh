@@ -56,10 +56,24 @@ echo "============================================================"
 
 cd "$PYTHON_DIR"
 
-# Run comprehensive benchmark (creates device folder with all results)
+# Run comprehensive generic benchmark (creates device folder with all results)
+echo "------------------------------------------------------------"
+echo ">> Running Core Generic Benchmarks (MLP/MatMul)..."
 python run_benchmark.py
+
+# Run NeurIPS Scaling Benchmarks (ResNet / BERT throughput)
+echo ""
+echo "------------------------------------------------------------"
+echo ">> Running NeurIPS Device Scaling Benchmarks (ResNet-50 & BERT-base)..."
+python throughput_benchmark.py
+
+# Run NeurIPS Ablation Benchmarks (Makespan Ratios)
+echo ""
+echo "------------------------------------------------------------"
+echo ">> Running NeurIPS Scheduler Ablation Benchmarks..."
+python ablation_benchmark.py
 
 echo ""
 echo "============================================================"
-echo "To submit results: Create a PR with your device folder!"
+echo "To submit results: Create a PR with your device folder and benchmark JSONs!"
 echo "============================================================"
