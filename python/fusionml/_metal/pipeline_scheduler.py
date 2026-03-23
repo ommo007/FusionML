@@ -31,6 +31,14 @@ except ImportError:
     HAS_MLX = False
 
 from .ane_backend import ANECompiledLayer, HAS_COREML
+import threading
+
+# Global hardware locks to prevent CoreML/MLX C++ double free across pipelines
+GLOBAL_BACKEND_LOCKS = {
+    "gpu": threading.Lock(),
+    "ane": threading.Lock(),
+    "cpu": threading.Lock()
+}
 
 
 # ============================================================================
@@ -143,6 +151,9 @@ class GPULayerExecutor:
             mx.eval(h)
             return np.array(h)
 
+        elif op == "custom":
+            return p["mlx_fn"](self._w_mx, x)
+
         raise ValueError(f"Unknown op: {op}")
 
 
@@ -182,6 +193,36 @@ class ANELayerExecutor:
             M = shape[0]
             K = shape[1] if len(shape) == 2 else shape[-1]
             self._layer = ANECompiledLayer.matmul(M=M, K=K, weight=w["weight"])
+        elif op == "custom":
+            # For custom ops, if a "torch_module" is provided in params, we compile it directly to ANE!
+            if "torch_module" in p:
+                torch_module = p["torch_module"]
+                cache_key = f"custom_torch_{self.config.name}_{shape}"
+                
+                # Import locally to avoid global dependency issues
+                import coremltools as ct
+                import torch
+                from .ane_backend import _model_cache
+                
+                model = _model_cache.get(cache_key)
+                if model is None:
+                    try:
+                        if self.config.name == "embeddings" or "input_ids" in self.config.name.lower():
+                            dummy_input = torch.randint(0, 100, shape, dtype=torch.long)
+                        else:
+                            dummy_input = torch.randn(*shape)
+                        
+                        traced_model = torch.jit.trace(torch_module.eval(), dummy_input)
+                        model = ct.convert(
+                            traced_model,
+                            inputs=[ct.TensorType(name="x", shape=shape)],
+                            minimum_deployment_target=ct.target.macOS13,
+                            compute_units=ct.ComputeUnit.CPU_AND_NE
+                        )
+                        _model_cache.put(cache_key, model)
+                    except Exception as e:
+                        print(f"ANE custom compile error for {self.config.name}: {e}")
+                self._layer = ANECompiledLayer(model, input_name="x")
 
     def run(self, x: np.ndarray) -> np.ndarray:
         if self._layer is None:
@@ -238,6 +279,9 @@ class CPULayerExecutor:
             var = x.var(axis=-1, keepdims=True)
             return g * (x - mean) / np.sqrt(var + 1e-5) + b
 
+        elif op == "custom":
+            return p["cpu_fn"](w, x)
+
         raise ValueError(f"Unknown op: {op}")
 
 
@@ -260,7 +304,7 @@ class PipelineScheduler:
         result = sched.run(input_data)
     """
 
-    def __init__(self, verbose: bool = False):
+    def __init__(self, verbose: bool = False, use_nds: bool = False, alpha: float = 0.2):
         self.layers: List[LayerConfig] = []
         self.profiles: List[LayerProfile] = []
         self.schedule: List[ScheduleEntry] = []
@@ -272,6 +316,16 @@ class PipelineScheduler:
         self._pool = ThreadPoolExecutor(max_workers=3)
         self._compiled = False
         self._verbose = verbose
+        self._use_nds = use_nds
+        self._alpha = alpha
+        self._nds = None
+        if self._use_nds:
+            try:
+                from .neural_scheduler import NeuralDeviceScheduler
+                self._nds = NeuralDeviceScheduler()
+            except ImportError as e:
+                print(f"Warning: Could not load NDS: {e}. Falling back to greedy scheduler.")
+                self._use_nds = False
 
     def add_layer(self, config: LayerConfig):
         """Add a layer to the pipeline."""
@@ -329,7 +383,11 @@ class PipelineScheduler:
                        iters: int = 5) -> LayerProfile:
         """Profile a layer on all backends."""
         profile = LayerProfile()
-        dummy = np.random.randn(*config.input_shape).astype(np.float32) * 0.02
+        
+        if config.name == "embeddings" or "input_ids" in config.name.lower():
+            dummy = np.random.randint(0, 100, config.input_shape).astype(np.int32)
+        else:
+            dummy = np.random.randn(*config.input_shape).astype(np.float32) * 0.02
 
         # GPU
         if HAS_MLX:
@@ -373,17 +431,19 @@ class PipelineScheduler:
 
     def _build_schedule(self) -> List[ScheduleEntry]:
         """
-        Build optimal pipeline schedule using greedy assignment.
+        Build optimal pipeline schedule.
 
-        Key insight: GPU and ANE can run in parallel (different hardware).
-        CPU can also run in parallel but shares memory bandwidth with GPU.
-
-        Strategy: Assign each layer to its fastest backend, then check if
-        pipelining GPU and ANE across consecutive layers is beneficial.
+        If `use_nds` is enabled, uses the trained Neural Device Scheduler.
+        Otherwise, uses the greedy pipeline overlap assignment algorithm.
         """
         n = len(self.layers)
         if n == 0:
             return []
+
+        if self._use_nds and self._nds is not None:
+            if self._verbose:
+                print("  Using Neural Device Scheduler (NDS) for UMHA partitioning...")
+            return self._nds.predict_schedule(self.layers, self.profiles, self._alpha)
 
         # Phase 1: Greedy assignment — each layer gets its best backend
         schedule = []
@@ -520,14 +580,16 @@ class PipelineScheduler:
 
     def run_true_pipeline(self, inputs: List[np.ndarray]) -> List[np.ndarray]:
         """
-        True inter-sample pipeline parallelism.
+        True inter-sample pipeline parallelism using thread queues.
 
-        Uses double-buffering: while GPU processes sample[k] layer[i],
+        Uses double-buffering queues: while GPU processes sample[k] layer[i],
         ANE processes sample[k-1] layer[i+1] — both run simultaneously.
 
-        This exploits the fact that GPU and ANE are separate hardware
-        with shared memory (zero-copy handoff).
+        This exploits the fact that GPU, ANE, and CPU drop the Python GIL
+        during backend kernel execution (CoreML, MLX eval, PyTorch ATen).
         """
+        import threading
+        import queue
         if not self._compiled:
             raise RuntimeError("Call compile() first")
 
@@ -536,82 +598,36 @@ class PipelineScheduler:
         if n_inputs == 0:
             return []
 
-        # Split layers into GPU-exec and ANE-exec groups
-        gpu_layers = [i for i, e in enumerate(self.schedule) if e.backend == "gpu"]
-        ane_layers = [i for i, e in enumerate(self.schedule) if e.backend == "ane"]
-
-        # If no ANE layers, just run sequentially on GPU
-        if not ane_layers:
-            return self.run_pipelined_batch(inputs)
-
         executors = [self._get_executor(e) for e in self.schedule]
 
-        # Double-buffer pipeline
-        # Stage buffers: stage[layer_idx] holds intermediate result
-        results = [None] * n_inputs
-        prev_intermediates = {}
-        curr_intermediates = {}
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
 
-        for b in range(n_inputs):
-            x = inputs[b]
-            curr_intermediates = {}
+        # We lock per backend globally. This natively simulates pipeline parallelism:
+        # Sample 1 moves to ANE, releasing GPU lock. Sample 2 acquires GPU lock.
+        # Both run simultaneously on different hardware endpoints.
 
-            for l in range(n_layers):
-                curr_entry = self.schedule[l]
+        def process_sample(x):
+            l = 0
+            while l < n_layers:
+                backend = self.schedule[l].backend
+                
+                # Find the contiguous block of layers assigned to this backend
+                end_l = l
+                while end_l < n_layers and self.schedule[end_l].backend == backend:
+                    end_l += 1
+                
+                # Acquire the hardware lock ONCE for the entire contiguous block
+                # to eliminate Python-level threading overhead and improve cache hits!
+                with GLOBAL_BACKEND_LOCKS[backend]:
+                    for idx in range(l, end_l):
+                        x = executors[idx].run(x)
+                
+                l = end_l
+            return x
 
-                # Check if we can overlap with previous sample's next layer
-                can_overlap = (
-                    b > 0 and
-                    l + 1 < n_layers and
-                    curr_entry.backend != self.schedule[l + 1].backend and
-                    (l + 1) in prev_intermediates
-                )
-
-                if can_overlap:
-                    # Parallel: current sample layer l + prev sample layer l+1
-                    next_entry = self.schedule[l + 1]
-                    curr_exec = executors[l]
-                    next_exec = executors[l + 1]
-                    prev_x = prev_intermediates[l + 1]
-
-                    out_curr = [None]
-                    out_prev = [None]
-
-                    def fn_curr(ex=curr_exec, inp=x):
-                        out_curr[0] = ex.run(inp)
-
-                    def fn_prev(ex=next_exec, inp=prev_x):
-                        out_prev[0] = ex.run(inp)
-
-                    t1 = threading.Thread(target=fn_curr)
-                    t2 = threading.Thread(target=fn_prev)
-                    t1.start()
-                    t2.start()
-                    t1.join()
-                    t2.join()
-
-                    x = out_curr[0]
-                    # Update previous sample's result if this was its last layer
-                    if l + 1 == n_layers - 1:
-                        results[b - 1] = out_prev[0]
-                else:
-                    x = executors[l].run(x)
-
-                curr_intermediates[l] = x
-
-            # Last sample's final result
-            if b == n_inputs - 1:
-                results[b] = x
-            else:
-                prev_intermediates = curr_intermediates
-
-        # Handle any remaining unfinished samples
-        for b in range(n_inputs):
-            if results[b] is None:
-                x = inputs[b]
-                for l in range(n_layers):
-                    x = executors[l].run(x)
-                results[b] = x
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            results = list(pool.map(process_sample, inputs))
 
         return results
 
