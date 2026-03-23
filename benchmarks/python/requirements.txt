@@ -4,3 +4,6 @@ mlx>=0.1.0; sys_platform == 'darwin'
 tqdm
 pyobjc-framework-Metal; sys_platform == 'darwin'
 pyobjc-framework-Cocoa; sys_platform == 'darwin'
+coremltools==8.0b1; sys_platform == 'darwin'
+torchvision>=0.15.0
+transformers>=4.40.0
