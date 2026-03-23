@@ -1,0 +1,42 @@
+{
+  "benchmark": "training",
+  "system_info": {
+    "processor": "arm",
+    "machine": "arm64",
+    "platform": "macOS-26.2-arm64-arm-64bit",
+    "python_version": "3.9.6",
+    "date": "2026-03-23T13:35:56.690591",
+    "cpu_brand": "Apple M4 Pro",
+    "ram_gb": 24,
+    "gpu_name": "Apple M4 Pro",
+    "cpu_cores": 12,
+    "storage_total": "926Gi"
+  },
+  "date": "2026-03-23T13:36:01.437849",
+  "results": {
+    "fusionml": {
+      "mean_ms": 3.283192920000009,
+      "min_ms": 0.6489580000001993,
+      "throughput_samples_per_sec": 9746.609711865458
+    },
+    "mlx": {
+      "mean_ms": 2.374301700000015,
+      "min_ms": 0.45424999999976734,
+      "throughput_samples_per_sec": 13477.64692246137
+    },
+    "pytorch": {
+      "mean_ms": 1.119200840000021,
+      "min_ms": 0.6725839999992544,
+      "throughput_samples_per_sec": 28591.82986317219
+    },
+    "mlx_version": "0.29.3",
+    "pytorch_device": "mps",
+    "pytorch_version": "2.8.0",
+    "config": {
+      "batch_size": 32,
+      "hidden_size": 256,
+      "epochs": 100,
+      "model": "MLP 784\u2192256\u219210"
+    }
+  }
+}
