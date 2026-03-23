@@ -1,0 +1,21 @@
+{
+  "overhead": {
+    "greedy_overhead_ms": 0.01360958005534485,
+    "nds_overhead_ms": 0.013570830051321536
+  },
+  "ablation": {
+    "greedy_npu_img_s": 66.68054943506618,
+    "greedy_gpu_img_s": 19.43563709442353,
+    "nds_img_s": 68.26762886555825
+  },
+  "contention": {
+    "base_gpu_sec": 1.0032499590015505,
+    "base_gpu_norm": 1.0,
+    "contended_sec": 2.3233783339965157,
+    "contended_gpu_norm": 0.43180653977943784
+  },
+  "multimodel": {
+    "concurrent_fps": 578.4272981293734,
+    "concurrent_seqs": 289.0127549531255
+  }
+}

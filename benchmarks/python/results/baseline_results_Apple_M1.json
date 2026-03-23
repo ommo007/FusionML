@@ -1,0 +1,24 @@
+{
+  "system": {
+    "machine": "arm64",
+    "cpu_brand": "Apple M1"
+  },
+  "benchmarks": {
+    "resnet50": {
+      "pytorch_mps_ms": 17.63464789983118,
+      "coreml_ms": 1.8650375001016073,
+      "onnx_ms": Infinity,
+      "pure_mlx_ms": 101.03858545044204,
+      "fusionml_auto_ms": 15.663287499046419,
+      "fusionml_concurrent_ms": 31.260118749924004
+    },
+    "bert_base": {
+      "pytorch_mps_ms": 25.01331665116595,
+      "coreml_ms": 4.275691650400404,
+      "onnx_ms": Infinity,
+      "pure_mlx_ms": 52.05598955071764,
+      "fusionml_auto_ms": 40.9061083002598,
+      "fusionml_concurrent_ms": 91.12588124989998
+    }
+  }
+}
