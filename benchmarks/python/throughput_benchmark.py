@@ -161,8 +161,19 @@ def main():
     
     metrics["multi_model_concurrency_sec"] = conc_time
 
+    import platform, subprocess
+    device_name = "unknown"
+    try:
+        res = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True)
+        if res.returncode == 0:
+            device_name = res.stdout.strip().replace(" ", "_").replace("(", "").replace(")", "")
+    except KeyboardInterrupt:
+        raise
+    except:
+        pass
+
     os.makedirs(os.path.join(os.path.dirname(__file__), "results"), exist_ok=True)
-    out_path = os.path.join(os.path.dirname(__file__), "results", "throughput_results.json")
+    out_path = os.path.join(os.path.dirname(__file__), "results", f"throughput_results_{device_name}.json")
     with open(out_path, "w") as f:
         json.dump(metrics, f, indent=2)
     print(f"\nThroughput results saved to {out_path}")
