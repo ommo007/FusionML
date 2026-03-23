@@ -1,0 +1,52 @@
+{
+  "system": {
+    "machine": "arm64",
+    "cpu_brand": "Apple M1"
+  },
+  "benchmarks": {
+    "resnet50": {
+      "gpu": {
+        "ms_per_item": 105.01816670002881,
+        "throughput": 9.522162035606414,
+        "layer_assignment": {
+          "gpu": 18
+        }
+      },
+      "ane": {
+        "ms_per_item": 16.733981250581564,
+        "throughput": 59.75864231144914,
+        "layer_assignment": {
+          "ane": 18
+        }
+      },
+      "cpu": {
+        "ms_per_item": 35.636614599934546,
+        "throughput": 28.06102687436075,
+        "layer_assignment": {
+          "cpu": 18
+        }
+      },
+      "auto": {
+        "ms_per_item": 35.75276249976014,
+        "throughput": 27.969866664337026,
+        "layer_assignment": {
+          "gpu": 0,
+          "ane": 0,
+          "cpu": 18
+        }
+      }
+    },
+    "bert_base": {
+      "gpu": {
+        "ms_per_item": 41.32298539989279,
+        "throughput": 24.199606836794384,
+        "layer_assignment": {
+          "gpu": 14
+        }
+      },
+      "ane": null,
+      "cpu": null,
+      "auto": null
+    }
+  }
+}
