@@ -73,6 +73,18 @@ echo "------------------------------------------------------------"
 echo ">> Running NeurIPS Scheduler Ablation Benchmarks..."
 python ablation_benchmark.py
 
+# Run Qualcomm Snapdragon Benchmarks
+echo ""
+echo "------------------------------------------------------------"
+echo ">> Running Qualcomm AI Hub Snapdragon Benchmarks..."
+if [ -n "$QAI_HUB_API_TOKEN" ] || [ -f "$HOME/.qai_hub/client.ini" ]; then
+    python qualcomm_benchmark.py
+else
+    echo "   Skipping Qualcomm benchmarks (QAI_HUB_API_TOKEN not set)."
+    echo "   To run: go to aihub.qualcomm.com, get a token, and run:"
+    echo "   export QAI_HUB_API_TOKEN='your_token'"
+fi
+
 echo ""
 echo "============================================================"
 echo "To submit results: Create a PR with your device folder and benchmark JSONs!"
