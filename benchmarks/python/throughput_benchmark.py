@@ -14,6 +14,7 @@ sys.path.insert(0, project_root)
 
 from fusionml.models.resnet50 import build_fusionml_resnet50_pipeline, get_pytorch_resnet50
 from fusionml.models.bert_base import build_fusionml_bert_pipeline, get_pytorch_bert
+from fusionml.models.vit import build_fusionml_vit_pipeline, get_pytorch_vit
 from benchmarks.python.baseline_benchmark import bench_coreml, bench_fusionml_mlx_only
 
 def run_batch_coreml(model, dummy_input, model_name, batch_sizes=[1, 16, 64], iters=10):
@@ -97,7 +98,7 @@ def main():
     print("================================================================")
 
     batch_sizes = [1, 16, 64]
-    metrics = {"resnet50": {}, "bert_base": {}}
+    metrics = {"resnet50": {}, "bert_base": {}, "vit": {}}
     
     # --- ResNet-50 ---
     print("\n[ResNet-50] Loading models...")
@@ -140,6 +141,27 @@ def main():
 
     for b in batch_sizes:
         print(f"  Batch {b} -> CoreML: {cml_bert_throughput[f'batch_{b}']:.1f} seq/s | FusionML: {fm_bert_throughput[f'batch_{b}']:.1f} seq/s")
+
+    # --- ViT-B/16 ---
+    print("\n[ViT-B/16] Loading models...")
+    pt_vit = get_pytorch_vit()
+    dummy_vit_img = torch.randn(1, 3, 224, 224)
+    dummy_vit_img_np = dummy_vit_img.numpy()
+    
+    print("[ViT-B/16] Evaluating CoreML Default...")
+    cml_vit_throughput = run_batch_coreml(pt_vit, dummy_vit_img, "vit", batch_sizes)
+    metrics["vit"]["coreml"] = cml_vit_throughput
+    
+    print("[ViT-B/16] Evaluating FusionML Neural Device Scheduler (NDS)...")
+    fm_vit_sched = build_fusionml_vit_pipeline()
+    fm_vit_sched._use_nds = True
+    fm_vit_sched.compile(profile_iters=2)
+    fm_vit_throughput = run_batch_fusionml(fm_vit_sched, dummy_vit_img_np, batch_sizes)
+    metrics["vit"]["fusionml"] = fm_vit_throughput
+
+    for b in batch_sizes:
+        print(f"  Batch {b} -> CoreML: {cml_vit_throughput[f'batch_{b}']:.1f} img/s | FusionML: {fm_vit_throughput[f'batch_{b}']:.1f} img/s")
+
 
     # --- Concurrent Multi-Model Exec ---
     print("\n[Multi-Model Concurrency] ResNet-50 + BERT-base Simultaneous execution")
