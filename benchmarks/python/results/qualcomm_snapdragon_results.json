@@ -1,0 +1,16 @@
+{
+  "qualcomm_device": "Samsung Galaxy S24 (Family)",
+  "resnet50": {
+    "latency_ms": 1.363,
+    "throughput_sps": 733.6757153338225,
+    "device": "Samsung Galaxy S24 (Family)",
+    "raw_summary": "{'estimated_inference_time': 1363, 'estimated_inference_peak_memory': 250712064, 'first_load_time': 1409407, 'first_load_peak_memory': 373043200, 'warm_load_time': 188651, 'warm_load_peak_memory': 264253440, 'compile_time': 0, 'compile_peak_memory': 0, 'compile_memory_increase_range': (0, 0), 'compile_memory_peak_range': (0, 0), 'first_load_memory_increase_range': (240293744, 248069584), 'first_load_memory_peak_range': (277266432, 285042272), 'warm_load_memory_increase_range': (0, 23779216), 'warm_load_memory_peak_range': (52727808, 175662096), 'inference_memory_increase_range': (0, 78704), 'inference_memory_peak_range': (16384, 124130384), 'all_compile_times': [], 'all_first_load_times': [1409407], 'all_warm_load_times': [188651], 'all_inference_times': [3972, 1509, 1414, 1407, 1386, 1381, 1415, 1445, 1363, 1378, 1374, 1599, 1422, 1389, 1399, 1376, 1377, 1379, 1374, 1380, 1383, 1377, 1375, 1383, 1379, 1379, 1377, 1380, 1382, 1383, 1379, 1394, 1389, 1388, 1410, 1383, 1389, 1379, 1380, 1375, 1381, 1388, 1376, 1374, 1386, 1374, 1376, 1387, 1379, 1379, 1390, 1374, 1377, 1383, 1373, 1368, 1375, 1376, 1368, 1373, 1372, 1377, 1379, 1383, 1375, 1386, 1377, 1437, 1418, 1396, 1407, 1405, 1401, 1417, 1419, 1416, 1439, 1465, 1440, 1424, 1410, 1393, 1424, 1398, 1411, 1391, 1386, 1391, 1384, 1408, 1380, 1379, 1412, 1376, 1387, 1378, 1378, 1381, 1380, 1377]}"
+  },
+  "bert_base": {
+    "latency_ms": 3.193,
+    "throughput_sps": 313.18509238960223,
+    "device": "Samsung Galaxy S24 (Family)",
+    "raw_summary": "{'estimated_inference_time': 3193, 'estimated_inference_peak_memory': 495833088, 'first_load_time': 3935514, 'first_load_peak_memory': 818274304, 'warm_load_time': 287294, 'warm_load_peak_memory': 538361856, 'compile_time': 0, 'compile_peak_memory': 0, 'compile_memory_increase_range': (0, 0), 'compile_memory_peak_range': (0, 0), 'first_load_memory_increase_range': (639758464, 647069328), 'first_load_memory_peak_range': (722952192, 730263056), 'warm_load_memory_increase_range': (0, 0), 'warm_load_memory_peak_range': (289394688, 628856096), 'inference_memory_increase_range': (0, 25072), 'inference_memory_peak_range': (16384, 342658720), 'all_compile_times': [], 'all_first_load_times': [3935514], 'all_warm_load_times': [287294], 'all_inference_times': [5832, 3264, 3249, 3228, 3237, 3242, 3231, 3230, 3209, 3218, 3223, 3412, 3219, 3211, 3212, 3233, 3202, 3215, 3217, 3213, 3215, 3200, 3209, 3230, 3216, 3223, 3225, 3215, 3217, 3250, 3222, 3193, 3217, 3213, 3217, 3223, 3221, 3214, 3225, 3215, 3215, 3216, 3223, 3223, 3221, 3216, 3211, 3214, 3215, 3219, 3232, 3222, 3222, 3207, 3213, 3208, 3215, 3216, 3220, 3214, 3209, 3217, 3232, 3214, 3235, 3229, 3235, 3233, 3217, 3242, 3219, 3222, 3220, 3233, 3205, 3226, 3228, 3223, 3219, 3231, 3214, 3215, 3220, 3231, 3211, 3228, 3221, 3319, 3221, 3223, 3205, 3213, 3220, 3203, 3230, 3211, 3229, 3216, 3229, 3212]}"
+  },
+  "timestamp": "2026-03-27T19:53:07"
+}
