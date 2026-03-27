@@ -25,7 +25,7 @@ except ImportError:
     sys.exit(1)
 
 
-def profile_model_on_snapdragon(model, input_specs, dummy_input, model_name, device_name="Samsung Galaxy S24 (Family)"):
+def profile_model_on_snapdragon(model, input_specs, dummy_input, model_name, device_name="Samsung Galaxy S24 (Family)", options=""):
     """
     Submits a PyTorch model to Qualcomm AI Hub for compilation and physical device profiling.
     """
@@ -41,6 +41,7 @@ def profile_model_on_snapdragon(model, input_specs, dummy_input, model_name, dev
         model=traced_model,
         device=hub.Device(device_name),
         input_specs=input_specs,
+        options=options,
     )
     
     target_model = compile_job.get_target_model()
@@ -57,8 +58,10 @@ def profile_model_on_snapdragon(model, input_specs, dummy_input, model_name, dev
     profile_data = profile_job.download_profile()
     
     # Typically, the execution summary contains median inference time in microseconds (us)
-    execution_summary = profile_data.execution_summary
-    estimated_inference_time_ms = execution_summary.estimated_inference_time / 1000.0  # Convert us to ms
+    # The profile_data returned by download_profile() is a dict in recent qai_hub versions
+    execution_summary = profile_data.get("execution_summary", {})
+    estimated_inference_time = execution_summary.get("estimated_inference_time", 0)
+    estimated_inference_time_ms = float(estimated_inference_time) / 1000.0  # Convert us to ms
     
     print(f"  ✅ {model_name} Profiling Complete: {estimated_inference_time_ms:.2f} ms")
     
@@ -125,7 +128,8 @@ def main():
                 super().__init__()
                 self.m = m
             def forward(self, input_ids):
-                return self.m(input_ids)[0]
+                # Ensure input_ids are cast strictly to long (int64) for NPU indexing compatibility
+                return self.m(input_ids.long())[0]
                 
         wrapped_bert = BertWrapper(bert)
         
@@ -134,7 +138,8 @@ def main():
             input_specs=dict(input_ids=(1, 128)),
             dummy_input=dummy_input_ids,
             model_name="BERT-base (128 seq)",
-            device_name=target_device
+            device_name=target_device,
+            options="--truncate_64bit_tensors"
         )
         results["bert_base"] = res
     except Exception as e:
