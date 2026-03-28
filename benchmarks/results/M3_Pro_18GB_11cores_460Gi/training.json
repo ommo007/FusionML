@@ -5,33 +5,33 @@
     "machine": "arm64",
     "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
     "python_version": "3.13.0",
-    "date": "2026-03-23T23:18:28.466363",
+    "date": "2026-03-28T13:56:19.183063",
     "cpu_brand": "Apple M3 Pro",
     "ram_gb": 18,
     "gpu_name": "Apple M3 Pro",
     "cpu_cores": 11,
     "storage_total": "460Gi"
   },
-  "date": "2026-03-23T23:18:57.200652",
+  "date": "2026-03-28T13:56:33.638249",
   "results": {
     "fusionml": {
-      "mean_ms": 0.6600662401615409,
-      "min_ms": 0.501374997838866,
-      "throughput_samples_per_sec": 48479.98284561334
+      "mean_ms": 0.6559925296460278,
+      "min_ms": 0.4973330069333315,
+      "throughput_samples_per_sec": 48781.04331045832
     },
     "mlx": {
-      "mean_ms": 0.6560625095880823,
-      "min_ms": 0.4420830009621568,
-      "throughput_samples_per_sec": 48775.84000355641
+      "mean_ms": 0.5472983003710397,
+      "min_ms": 0.40350001654587686,
+      "throughput_samples_per_sec": 58469.028641794925
     },
     "pytorch": {
-      "mean_ms": 1.2008788003731752,
-      "min_ms": 0.8142500009853393,
-      "throughput_samples_per_sec": 26647.15206068751
+      "mean_ms": 0.9818812314188108,
+      "min_ms": 0.8439580269623548,
+      "throughput_samples_per_sec": 32590.499722415763
     },
     "mlx_version": "0.31.1",
     "pytorch_device": "mps",
-    "pytorch_version": "2.10.0",
+    "pytorch_version": "2.9.1",
     "config": {
       "batch_size": 32,
       "hidden_size": 256,
