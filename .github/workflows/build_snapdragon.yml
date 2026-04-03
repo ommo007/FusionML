@@ -1,0 +1,66 @@
+name: Build Snapdragon Benchmark Pipeline
+
+on:
+  push:
+    branches: [ "local", "main", "master" ]
+    paths:
+      - "benchmarks/snapdragon/**"
+      - ".github/workflows/build_snapdragon.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+
+      - name: Checkout TensorFlow Lite Source
+        run: |
+          cd benchmarks/snapdragon
+          git clone --depth 1 https://github.com/tensorflow/tensorflow.git
+          
+      - name: Build TFLite Native Arm64 Binary
+        run: |
+          cd benchmarks/snapdragon
+          export NDK=${{ steps.setup-ndk.outputs.ndk-path }}
+          export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+          
+          mkdir tflite_build && cd tflite_build
+          cmake ../tensorflow/lite \
+              -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
+              -DANDROID_ABI=arm64-v8a \
+              -DANDROID_PLATFORM=android-33 \
+              -DTFLITE_ENABLE_GPU=ON \
+              -DTFLITE_ENABLE_NNAPI=ON \
+              -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+          
+      - name: Build FusionML Hardware Benchmark
+        run: |
+          cd benchmarks/snapdragon
+          export NDK=${{ steps.setup-ndk.outputs.ndk-path }}
+          export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+          
+          $TOOLCHAIN/bin/aarch64-linux-android33-clang++ \
+              -std=c++17 -O3 \
+              -I./tensorflow \
+              benchmark_pipeline.cpp \
+              -L./tflite_build \
+              -ltensorflowlite \
+              -ltensorflowlite_gpu_delegate \
+              -lpthread \
+              -o fusionml_benchmark \
+              -static-libstdc++
+              
+      - name: Upload Native Android Executable Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: fusionml_benchmark_binary
+          path: benchmarks/snapdragon/fusionml_benchmark
