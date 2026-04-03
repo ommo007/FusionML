@@ -91,3 +91,25 @@ Contributors who submitted verified benchmarks:
 ---
 
 *FusionML - Faster than MLX on Apple Silicon* 🚀
+
+---
+
+## 📱 Snapdragon Physical Hardware Benchmarking
+
+To generate real empirical throughput values for Qualcomm Snapdragon endpoints (e.g., Samsung Galaxy S24) via C++ physical pipelining overriding the Python GIL:
+
+```bash
+cd benchmarks/snapdragon
+
+# 1. Export models to Android format
+python3 export_tflite.py
+
+# 2. Build the C++ multi-threaded benchmark using Android NDK
+export NDK=/path/to/android-ndk-r26b
+./build_android.sh
+
+# 3. Enable USB Debugging on your phone, plug it in, and run:
+./run_benchmark.sh
+```
+
+The script will automatically deploy the binaries via `adb`, execute the isolated and pipelined workloads using the TFLite NNAPI/GPU delegates, extract `results.json`, and wipe the Android device clean.
