@@ -60,10 +60,10 @@ fi
 PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo "  Python:   $PY_VER"
 
-# echo -e "${YELLOW}Cloning FusionML...${NC}"
-# cd "$WORK_DIR"
-# git clone --depth 1 --branch benchmarks https://github.com/ommo007/FusionML.git 2>/dev/null
-# cd FusionML
+echo -e "${YELLOW}Cloning FusionML...${NC}"
+cd "$WORK_DIR"
+git clone --depth 1 --branch benchmarks https://github.com/ommo007/FusionML.git 2>/dev/null
+cd FusionML
 
 echo -e "${YELLOW}Installing dependencies...${NC}"
 pip3 install --quiet numpy mlx coremltools 2>/dev/null || \
