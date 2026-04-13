@@ -1,0 +1,42 @@
+{
+  "benchmark": "training",
+  "system_info": {
+    "processor": "arm",
+    "machine": "arm64",
+    "platform": "macOS-14.5-arm64-arm-64bit",
+    "python_version": "3.11.6",
+    "date": "2026-04-12T11:30:19.094132",
+    "cpu_brand": "Apple M2",
+    "ram_gb": 8,
+    "gpu_name": "Apple M2",
+    "cpu_cores": 8,
+    "storage_total": "228Gi"
+  },
+  "date": "2026-04-12T11:30:26.979394",
+  "results": {
+    "fusionml": {
+      "mean_ms": 2.4930370901711285,
+      "min_ms": 0.8170839864760637,
+      "throughput_samples_per_sec": 12835.749667006934
+    },
+    "mlx": {
+      "mean_ms": 1.6018583509139717,
+      "min_ms": 0.9532920084893703,
+      "throughput_samples_per_sec": 19976.797562494696
+    },
+    "pytorch": {
+      "mean_ms": 1.1721566406777129,
+      "min_ms": 1.0679580154828727,
+      "throughput_samples_per_sec": 27300.105540073866
+    },
+    "mlx_version": "0.31.1",
+    "pytorch_device": "mps",
+    "pytorch_version": "2.11.0",
+    "config": {
+      "batch_size": 32,
+      "hidden_size": 256,
+      "epochs": 100,
+      "model": "MLP 784\u2192256\u219210"
+    }
+  }
+}
