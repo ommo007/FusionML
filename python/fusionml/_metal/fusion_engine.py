@@ -34,6 +34,12 @@ try:
 except ImportError:
     HAS_COREML = False
 
+try:
+    from .tri_scheduler import tri_matmul
+except ImportError:
+    def tri_matmul(a, b):
+        return np.matmul(a, b)
+
 
 # ============================================================================
 # PERFORMANCE DATABASE
@@ -256,118 +262,60 @@ class FusionEngine:
     def forward_2layer(self, x: np.ndarray, w1: np.ndarray, w2: np.ndarray) -> np.ndarray:
         """
         Optimized 2-layer forward pass: matmul → relu → matmul.
-        
-        Uses MLX-native pipeline: data→GPU only at start, GPU→CPU only at end.
-        Intermediate results stay on GPU, eliminating 2x conversion overhead.
+        Routes matmuls through the dynamic scheduler.
         """
-        min_dim = min(x.shape[0], w1.shape[0])
-        
-        if min_dim >= 1024 and HAS_MLX:
-            # Keep everything in MLX — one np→mx at start, one mx→np at end
-            x_mx = mx.array(x)
-            w1_mx = mx.array(w1)
-            w2_mx = mx.array(w2)
-            h = x_mx @ w1_mx
-            h = mx.maximum(h, mx.array(0.0))
-            o = h @ w2_mx
-            mx.eval(o)
-            return np.array(o)
-        else:
-            # Small: CPU is faster, no conversion needed
-            h = np.matmul(x, w1)
-            h = np.maximum(h, 0)
-            return np.matmul(h, w2)
+        h = tri_matmul(x, w1)
+        h = np.maximum(h, 0)
+        return tri_matmul(h, w2)
 
     def transformer_encoder_block(self, x: np.ndarray, 
                                 w_q: np.ndarray, w_k: np.ndarray, w_v: np.ndarray, 
                                 w_o: np.ndarray, w_ff1: np.ndarray, w_ff2: np.ndarray,
                                 heads: int = 8) -> np.ndarray:
         """
-        Optimized Transformer Encoder Block (Native MLX Pipeline).
-        
-        Operation:
-          1. Multi-Head Attention (Q,K,V proj -> Scaled Dot Product -> Output proj)
-          2. Add + Norm (simplified to Add for benchmark)
-          3. Feed Forward (Linear -> GELU -> Linear)
-          4. Add + Norm (simplified to Add for benchmark)
-          
-        Keep entire graph on GPU to eliminate 6+ conversions.
+        Optimized Transformer Encoder Block using per-operation routing.
         """
         B, L, D = x.shape
-        min_dim = min(B * L, D)
+        x_flat = x.reshape(B * L, D)
         
-        # Use MLX path for larger workloads
-        if min_dim >= 512 and HAS_MLX:
-            x_mx = mx.array(x)
-            q_mx, k_mx, v_mx = mx.array(w_q), mx.array(w_k), mx.array(w_v)
-            o_mx = mx.array(w_o)
-            ff1_mx, ff2_mx = mx.array(w_ff1), mx.array(w_ff2)
-            
-            # 1. Attention
-            # Projections
-            Q = x_mx @ q_mx
-            K = x_mx @ k_mx
-            V = x_mx @ v_mx
-            
-            # Reshape for heads (B, L, H, D//H) -> (B, H, L, D//H)
-            d_head = D // heads
-            Q = Q.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
-            K = K.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
-            V = V.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
-            
-            # Scaled Dot Product
-            scale = 1.0 / np.sqrt(d_head)
-            scores = (Q @ K.transpose(0, 1, 3, 2)) * scale
-            attn = mx.softmax(scores, axis=-1)
-            out = attn @ V
-            
-            # Combine heads (B, H, L, D//H) -> (B, L, D)
-            out = out.transpose(0, 2, 1, 3).reshape(B, L, D)
-            
-            # Output projection + Residual
-            out = (out @ o_mx) + x_mx
-            
-            # 2. Feed Forward (MLP)
-            # Linear -> GELU -> Linear + Residual
-            ff = out @ ff1_mx
-            ff = mx.maximum(ff, mx.array(0.0)) # ReLU for simplicity/parity
-            ff = ff @ ff2_mx
-            output = ff + out
-            
-            mx.eval(output)
-            return np.array(output)
-            
-        else:
-            # CPU Fallback (simplified)
-            # 1. Attention
-            Q = x @ w_q
-            K = x @ w_k
-            V = x @ w_v
-            
-            d_head = D // heads
-            Q = Q.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
-            K = K.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
-            V = V.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
-            
-            scale = 1.0 / np.sqrt(d_head)
-            scores = (Q @ K.transpose(0, 1, 3, 2)) * scale
-            
-            # Stable softmax
-            scores_max = scores.max(axis=-1, keepdims=True)
-            exp_scores = np.exp(scores - scores_max)
-            attn = exp_scores / exp_scores.sum(axis=-1, keepdims=True)
-            
-            out = attn @ V
-            out = out.transpose(0, 2, 1, 3).reshape(B, L, D)
-            out = (out @ w_o) + x
-            
-            # 2. MLP
-            ff = out @ w_ff1
-            ff = np.maximum(ff, 0)
-            ff = ff @ w_ff2
-            output = ff + out
-            
-            return output
+        # 1. Attention Projections
+        Q_flat = tri_matmul(x_flat, w_q)
+        K_flat = tri_matmul(x_flat, w_k)
+        V_flat = tri_matmul(x_flat, w_v)
+        
+        # Reshape to 4D for multi-head attention
+        d_head = D // heads
+        Q = Q_flat.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
+        K = K_flat.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
+        V = V_flat.reshape(B, L, heads, d_head).transpose(0, 2, 1, 3)
+        
+        # Scaled Dot Product (done on CPU as it is small and Batched)
+        scale = 1.0 / np.sqrt(d_head)
+        scores = np.matmul(Q, K.transpose(0, 1, 3, 2)) * scale
+        
+        # Softmax
+        scores_max = scores.max(axis=-1, keepdims=True)
+        exp_scores = np.exp(scores - scores_max)
+        attn = exp_scores / exp_scores.sum(axis=-1, keepdims=True)
+        
+        # Attn @ V
+        out = np.matmul(attn, V)
+        
+        # Combine heads
+        out_flat = out.transpose(0, 2, 1, 3).reshape(B * L, D)
+        
+        # Output projection + residual connection
+        projected_flat = tri_matmul(out_flat, w_o)
+        h1_flat = projected_flat + x_flat
+        
+        # 2. MLP (Feed Forward)
+        ff_flat = tri_matmul(h1_flat, w_ff1)
+        ff_flat = np.maximum(ff_flat, 0)
+        output_flat = tri_matmul(ff_flat, w_ff2)
+        
+        res_flat = output_flat + h1_flat
+        return res_flat.reshape(B, L, D)
+
 
 
 # ============================================================================

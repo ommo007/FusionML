@@ -48,7 +48,7 @@ except ImportError:
 # Suppress NumPy warnings (overflow/underflow common in fp16/fp32 accumulation)
 np.seterr(all='ignore')
 
-def time_fn(fn, iterations=10, warmup=5):
+def time_fn(fn, iterations=10, warmup=10):
     # Warmup
     for _ in range(warmup):
         fn()
@@ -65,6 +65,7 @@ def time_fn(fn, iterations=10, warmup=5):
         "mean_ms": np.mean(times),
         "median_ms": np.median(times),
         "min_ms": np.min(times),
+        "max_ms": np.max(times),
         "std_ms": np.std(times)
     }
 
@@ -205,18 +206,22 @@ def benchmark_transformer_block(B=1, L=128, D=512, Heads=8, iter=20):
         results["FusionML"] = time_fn(fusion_run, iterations=iter)
 
     # Print Results
-    print(f"{'Framework':<15} | {'Median Latency':<15} | {'Throughput':<15}")
-    print("-" * 50)
+    print(f"{'Framework':<18} | {'Mean ± Std (ms)':<22} | {'Median (ms)':<12} | {'Min/Max (ms)':<18} | {'Throughput':<15}")
+    print("-" * 95)
     
     # Sort by median time
     sorted_res = sorted(results.items(), key=lambda kv: kv[1]["median_ms"])
     winner = sorted_res[0][0]
     
     for name, stats in sorted_res:
-        ms = stats["median_ms"]
-        tokens_per_sec = (B * L) / (ms / 1000.0)
+        mean = stats["mean_ms"]
+        std = stats["std_ms"]
+        median = stats["median_ms"]
+        xmin = stats["min_ms"]
+        xmax = stats["max_ms"]
+        tokens_per_sec = (B * L) / (median / 1000.0)
         marker = "✅ WINNER" if name == winner else ""
-        print(f"{name:<15} | {ms:>10.3f} ms   | {tokens_per_sec:>10.1f} tok/s {marker}")
+        print(f"{name:<18} | {mean:>7.2f} ± {std:<6.2f} ms | {median:>10.2f} | {xmin:>6.2f}/{xmax:<6.2f} | {tokens_per_sec:>9.1f} tok/s {marker}")
 
 if __name__ == "__main__":
     print("===============================================================")

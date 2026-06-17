@@ -401,8 +401,23 @@ def matmul(a: Tensor, b: Tensor) -> Tensor:
     - Medium (1000-2048): MLX GPU
     - Large (>=2048): Tri-compute (GPU+CPU+ANE parallel) when available
     """
-    # FAST PATH: Both on GPU - skip all checks
+    # FAST PATH: Both on GPU - check size for potential ANE/Tri-Compute wins
     if a._on_gpu and b._on_gpu:
+        M = a.shape[0]
+        K = a.shape[1] if len(a.shape) > 1 else 1
+        N = b.shape[1] if len(b.shape) > 1 else 1
+        min_dim = min(M, K, N)
+        if HAS_TRI and min_dim >= 2048:
+            a_np = a.numpy
+            b_np = b.numpy
+            scheduler = _get_tri_scheduler()
+            c_np = scheduler.tri_matmul(a_np, b_np)
+            result = Tensor(c_np).to_gpu()
+            result.requires_grad = a.requires_grad or b.requires_grad
+            result._ctx = ('matmul', a, b) if result.requires_grad else None
+            result.grad = None
+            return result
+            
         result = Tensor.__new__(Tensor)
         result._mlx = a._mlx @ b._mlx
         result._np = None
@@ -426,7 +441,7 @@ def matmul(a: Tensor, b: Tensor) -> Tensor:
         result._np = np.matmul(a_np, b_np)
         result._mlx = None
         result._on_gpu = False
-    elif HAS_TRI and min_dim >= 2048:
+    elif HAS_TRI and min_dim >= 1024:
         # Large matrices: Tri-compute (GPU+CPU+ANE parallel)
         a_np = a.numpy if a._on_gpu else a._np
         b_np = b.numpy if b._on_gpu else b._np
