@@ -7,5 +7,3 @@ pyobjc-framework-Cocoa; sys_platform == 'darwin'
 coremltools>=7.1.0; sys_platform == 'darwin'
 torchvision>=0.15.0
 transformers>=4.31.0
-qai-hub
-qai-hub-models

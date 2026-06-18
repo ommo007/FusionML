@@ -4,6 +4,8 @@
 import Foundation
 import CoreML
 import Accelerate
+import Metal
+
 
 /// Three-way smart scheduler using GPU, ANE, and CPU
 public final class SmartScheduler3: @unchecked Sendable {
@@ -31,7 +33,7 @@ public final class SmartScheduler3: @unchecked Sendable {
         modelLock.unlock()
         
         // Use absolute path to models directory
-        let basePath = "/Users/ommohite/Documents/Programming/Training on ANE/ANELib/models"
+        let basePath = "/Users/ommohite/Documents/Programming/FusionML/models"
         let mlpackagePath = "\(basePath)/matmul_\(size).mlpackage"
         let mlpackageURL = URL(fileURLWithPath: mlpackagePath)
         
@@ -61,17 +63,23 @@ public final class SmartScheduler3: @unchecked Sendable {
         let N = b.shape[1]
         
         // Create MLMultiArrays
-        let aArray = try MLMultiArray(shape: [M, K] as [NSNumber], dataType: .float32)
-        let bArray = try MLMultiArray(shape: [K, N] as [NSNumber], dataType: .float32)
+        let aArray = try MLMultiArray(shape: [M, K] as [NSNumber], dataType: .float16)
+        let bArray = try MLMultiArray(shape: [K, N] as [NSNumber], dataType: .float16)
         
-        let aData = a.toArray()
-        let bData = b.toArray()
-        
-        for i in 0..<aData.count {
-            aArray[i] = NSNumber(value: aData[i])
+        // Convert Float to Float16 during copy
+        aArray.withUnsafeMutableBytes { ptr, strides in
+            let dest = ptr.baseAddress!.assumingMemoryBound(to: Float16.self)
+            let src = a.buffer.pointer.assumingMemoryBound(to: Float.self)
+            for i in 0..<(M * K) {
+                dest[i] = Float16(src[i])
+            }
         }
-        for i in 0..<bData.count {
-            bArray[i] = NSNumber(value: bData[i])
+        bArray.withUnsafeMutableBytes { ptr, strides in
+            let dest = ptr.baseAddress!.assumingMemoryBound(to: Float16.self)
+            let src = b.buffer.pointer.assumingMemoryBound(to: Float.self)
+            for i in 0..<(K * N) {
+                dest[i] = Float16(src[i])
+            }
         }
         
         let input = try MLDictionaryFeatureProvider(dictionary: [
@@ -81,15 +89,19 @@ public final class SmartScheduler3: @unchecked Sendable {
         
         let output = try model.prediction(from: input)
         
-        guard let resultArray = output.featureValue(for: "output")?.multiArrayValue else {
+        guard let resultArray = output.featureValue(for: "var_3")?.multiArrayValue else {
             throw ANEError.invalidInput
         }
         
         let result = try Tensor(shape: [M, N], dtype: .float32)
         let ptr = result.buffer.pointer.bindMemory(to: Float.self, capacity: M * N)
         
-        for i in 0..<(M * N) {
-            ptr[i] = resultArray[i].floatValue
+        // Convert Float16 back to Float
+        resultArray.withUnsafeBytes { ptrBuffer in
+            let src = ptrBuffer.baseAddress!.assumingMemoryBound(to: Float16.self)
+            for i in 0..<(M * N) {
+                ptr[i] = Float(src[i])
+            }
         }
         
         return result
@@ -128,7 +140,8 @@ public final class SmartScheduler3: @unchecked Sendable {
                 recordProfile(key: key, backend: .ane, timeMs: aneTime)
                 aneGFLOPS = (2.0 * Double(size * size * size) / aneTime) / 1_000_000
             } catch {
-                print("  ⚠️ ANE error for \(size)×\(size): \(error)")
+                let msg = error.localizedDescription
+                print("  ⚠️ ANE error for \(size)×\(size): \(msg)")
             }
             
             print("  \(size)×\(size): CPU \(String(format: "%.0f", cpuGFLOPS)), GPU \(String(format: "%.0f", gpuGFLOPS)), ANE \(String(format: "%.0f", aneGFLOPS)) GFLOPS")
@@ -204,62 +217,88 @@ public final class SmartScheduler3: @unchecked Sendable {
         
         let result = try Tensor(shape: [M, N], dtype: a.dtype)
         let group = DispatchGroup()
-        var errors: [Error?] = [nil, nil, nil]
+        let threadErrors = ThreadSafeErrors()
         
-        // CPU portion (rows 0..<cpuRows)
-        if cpuRows > 0 {
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let aPtr = a.buffer.pointer.bindMemory(to: Float.self, capacity: a.count)
-                    let bPtr = b.buffer.pointer.bindMemory(to: Float.self, capacity: b.count)
-                    let rPtr = result.buffer.pointer.bindMemory(to: Float.self, capacity: result.count)
-                    let K = a.shape[1]
-                    
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
-                               Int32(cpuRows), Int32(N), Int32(K), 1.0,
-                               aPtr, Int32(K), bPtr, Int32(N), 0.0, rPtr, Int32(N))
-                }
-                group.leave()
-            }
-        }
+        // Bind pointers and extract buffers on the caller thread
+        let aPtr = a.buffer.pointer.bindMemory(to: Float.self, capacity: a.count)
+        let bPtr = b.buffer.pointer.bindMemory(to: Float.self, capacity: b.count)
+        let rPtr = result.buffer.pointer.bindMemory(to: Float.self, capacity: result.count)
         
+        let aMetal = a.metalBuffer
+        let bMetal = b.metalBuffer
+        let rMetal = result.metalBuffer
+        
+        let K = a.shape[1]
+
         // GPU portion (rows cpuRows..<cpuRows+gpuRows)
         if gpuRows > 0 {
             group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: .userInitiated).async { [aMetal, bMetal, rMetal] in
                 do {
-                    let aSlice = try self.sliceRows(a, start: cpuRows, count: gpuRows)
-                    let gpuResult = try GPUEngine.shared.matmulMPS(aSlice, b)
-                    self.copyRows(from: gpuResult, to: result, startRow: cpuRows)
+                    try GPUEngine.shared.matmulRawMPS(
+                        a: aMetal,
+                        b: bMetal,
+                        result: rMetal,
+                        M: gpuRows,
+                        N: N,
+                        K: K,
+                        aOffset: cpuRows * K * 4,
+                        resultOffset: cpuRows * N * 4
+                    )
                 } catch {
-                    errors[1] = error
+                    threadErrors.append(error)
+                }
+                group.leave()
+            }
+        }
+
+        // ANE portion (rows cpuRows+gpuRows..<M)
+        if aneRows > 0 {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async { [aPtr, b, rPtr] in
+                do {
+                    let startRow = cpuRows + gpuRows
+                    if self.aneModels[M] != nil {
+                        // Create padded input A of shape [M, K]
+                        let paddedA = try Tensor.zeros([M, K])
+                        let paddedAPtr = paddedA.buffer.pointer.bindMemory(to: Float.self, capacity: paddedA.count)
+                        
+                        // Copy the ANE slice rows into the top of paddedA
+                        memcpy(paddedAPtr, aPtr.advanced(by: startRow * K), aneRows * K * 4)
+                        
+                        // Run ANE prediction
+                        let ANEPaddedResult = try self.aneMatmul(paddedA, b)
+                        let ANEPaddedResultPtr = ANEPaddedResult.buffer.pointer.bindMemory(to: Float.self, capacity: ANEPaddedResult.count)
+                        
+                        // Copy the computed rows back to the result matrix
+                        memcpy(rPtr.advanced(by: startRow * N), ANEPaddedResultPtr, aneRows * N * 4)
+                    } else {
+                        // Fallback to CPU matmul for slice
+                        let aSlice = try Tensor(shape: [aneRows, K], dtype: .float32)
+                        let aSlicePtr = aSlice.buffer.pointer.bindMemory(to: Float.self, capacity: aSlice.count)
+                        memcpy(aSlicePtr, aPtr.advanced(by: startRow * K), aneRows * K * 4)
+                        
+                        let tempResult = try Tensor.matmul(aSlice, b)
+                        let tempResultPtr = tempResult.buffer.pointer.bindMemory(to: Float.self, capacity: tempResult.count)
+                        memcpy(rPtr.advanced(by: startRow * N), tempResultPtr, aneRows * N * 4)
+                    }
+                } catch {
+                    threadErrors.append(error)
                 }
                 group.leave()
             }
         }
         
-        // ANE portion (rows cpuRows+gpuRows..<M)
-        if aneRows > 0, aneModels[M] != nil {
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let aSlice = try self.sliceRows(a, start: cpuRows + gpuRows, count: aneRows)
-                    // For ANE we need matching model size - use CPU fallback for slice
-                    let aneResult = try Tensor.matmul(aSlice, b)
-                    self.copyRows(from: aneResult, to: result, startRow: cpuRows + gpuRows)
-                } catch {
-                    errors[2] = error
-                }
-                group.leave()
-            }
+        // CPU portion (rows 0..<cpuRows) - runs synchronously in parallel with GPU/ANE
+        if cpuRows > 0 {
+            cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                       Int32(cpuRows), Int32(N), Int32(K), 1.0,
+                       aPtr, Int32(K), bPtr, Int32(N), 0.0, rPtr, Int32(N))
         }
         
         group.wait()
         
-        for error in errors {
-            if let error = error { throw error }
-        }
+        try threadErrors.check()
         
         return result
     }
@@ -295,6 +334,26 @@ public final class SmartScheduler3: @unchecked Sendable {
                 let pct = total > 0 ? (profile.throughput / total) * 100 : 0
                 print("  \(backend.rawValue): \(String(format: "%.2f", profile.avgTimeMs)) ms → \(String(format: "%.0f", pct))% of work")
             }
+        }
+    }
+}
+
+/// Thread-safe array of errors for concurrent execution paths
+private final class ThreadSafeErrors: @unchecked Sendable {
+    private var errors: [Error] = []
+    private let lock = NSLock()
+    
+    func append(_ error: Error) {
+        lock.lock()
+        errors.append(error)
+        lock.unlock()
+    }
+    
+    func check() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if let first = errors.first {
+            throw first
         }
     }
 }

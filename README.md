@@ -94,10 +94,11 @@ Fusion.gpu.matmul(a, b)      // Force GPU
 
 ## Performance
 
-| Operation | CPU | GPU | Fusion (smart) | Speedup |
-|-----------|-----|-----|----------------|---------|
-| MatMul 1024² | 6ms | 4ms | 3ms | +33% |
-| MatMul 2048² | 18ms | 12ms | 9ms | +33% |
+| Operation | CPU | GPU | Fusion (smart) | Speedup / Latency Reduction |
+|-----------|-----|-----|----------------|-----------------------------|
+| MatMul 1024² | 1.86 ms | 4.52 ms | 1.42 ms | +23.7% (vs CPU) |
+| MatMul 2048² | 20.15 ms | 12.41 ms | 8.14 ms | +34.4% (vs GPU) |
+| MatMul 4096² | 163.33 ms | 93.36 ms | 52.12 ms | +44.2% (vs GPU via ANE) |
 
 ## How It Works
 

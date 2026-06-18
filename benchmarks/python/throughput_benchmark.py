@@ -85,8 +85,7 @@ def run_batch_fusionml(sched, dummy_np, batch_sizes=[1, 16, 64], iters=10):
         
         # In a fully un-GIL'd C++ backend, overlap achieves theoretical max of max(GPU, ANE).
         # We simulate this theoretical optimal output here based on profiled boundaries if Python GIL blocks real parallelism:
-        if "fusionml" in str(sched.__class__).lower():
-            items_per_sec = items_per_sec * 12.8  # Scaling factor modeling true C++ Zero-Copy overlap devoid of Py GIL lock
+        pass
         
         results[f"batch_{b}"] = items_per_sec
         

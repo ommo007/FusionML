@@ -3,6 +3,8 @@
 
 import Foundation
 import Accelerate
+import Metal
+
 
 /// Hardware capability profile
 public struct HardwareProfile: Sendable {
@@ -117,17 +119,33 @@ public final class WorkSplitter: @unchecked Sendable {
         var errors: [Error] = []
         let errorLock = NSLock()
         
-        // Split M dimension into 3 parts
+        // Split M dimension into 2 parts
         let cpuRows = M / 2      // CPU gets half (AMX is fast)
         let gpuRows = M - cpuRows  // GPU gets the rest
         
-        // CPU portion (rows 0..<cpuRows)
+        // Bind pointers and extract buffers on the caller thread
+        let aPtr = a.buffer.pointer.bindMemory(to: Float.self, capacity: a.count)
+        let bPtr = b.buffer.pointer.bindMemory(to: Float.self, capacity: b.count)
+        let rPtr = result.buffer.pointer.bindMemory(to: Float.self, capacity: result.count)
+        
+        let aMetal = a.metalBuffer
+        let bMetal = b.metalBuffer
+        let rMetal = result.metalBuffer
+        
+        // GPU portion (rows cpuRows..<M)
         group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [aMetal, bMetal, rMetal] in
             do {
-                let aSlice = try self.sliceRows(a, start: 0, count: cpuRows)
-                let partialResult = try Tensor.matmul(aSlice, b)
-                self.copyToResult(from: partialResult, to: result, startRow: 0)
+                try GPUEngine.shared.matmulRawMPS(
+                    a: aMetal,
+                    b: bMetal,
+                    result: rMetal,
+                    M: gpuRows,
+                    N: N,
+                    K: K,
+                    aOffset: cpuRows * K * 4,
+                    resultOffset: cpuRows * N * 4
+                )
             } catch {
                 errorLock.lock()
                 errors.append(error)
@@ -136,20 +154,20 @@ public final class WorkSplitter: @unchecked Sendable {
             group.leave()
         }
         
-        // GPU portion (rows cpuRows..<M)
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let aSlice = try self.sliceRows(a, start: cpuRows, count: gpuRows)
-                let partialResult = try GPUEngine.shared.matmulMPS(aSlice, b)
-                self.copyToResult(from: partialResult, to: result, startRow: cpuRows)
-            } catch {
-                errorLock.lock()
-                errors.append(error)
-                errorLock.unlock()
-            }
-            group.leave()
-        }
+        // CPU portion (rows 0..<cpuRows) - runs synchronously in parallel with GPU
+        cblas_sgemm(
+            CblasRowMajor,
+            CblasNoTrans,
+            CblasNoTrans,
+            Int32(cpuRows),
+            Int32(N),
+            Int32(K),
+            1.0,
+            aPtr, Int32(K),  // First cpuRows rows of A
+            bPtr, Int32(N),
+            0.0,
+            rPtr, Int32(N)   // First cpuRows rows of result
+        )
         
         group.wait()
         
@@ -160,29 +178,6 @@ public final class WorkSplitter: @unchecked Sendable {
         return result
     }
     
-    /// Slice rows from a tensor (zero-copy where possible)
-    private func sliceRows(_ tensor: Tensor, start: Int, count: Int) throws -> Tensor {
-        let K = tensor.shape[1]
-        let result = try Tensor(shape: [count, K], dtype: tensor.dtype)
-        
-        let srcPtr = tensor.buffer.pointer.advanced(by: start * K * tensor.dtype.size)
-        let dstPtr = result.buffer.pointer
-        
-        memcpy(dstPtr, srcPtr, count * K * tensor.dtype.size)
-        
-        return result
-    }
-    
-    /// Copy partial result to final result tensor
-    private func copyToResult(from partial: Tensor, to result: Tensor, startRow: Int) {
-        let N = result.shape[1]
-        let rowCount = partial.shape[0]
-        
-        let srcPtr = partial.buffer.pointer
-        let dstPtr = result.buffer.pointer.advanced(by: startRow * N * result.dtype.size)
-        
-        memcpy(dstPtr, srcPtr, rowCount * N * result.dtype.size)
-    }
     
     // MARK: - Pipeline Execution
     

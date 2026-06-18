@@ -28,6 +28,15 @@ public final class IntelligentRouter: @unchecked Sendable {
     
     public static let shared = IntelligentRouter()
     
+    /// Global flag to enable/disable workload splitting (e.g. for profiling baselines)
+    public var enableSplitting: Bool = true
+    
+    /// Globally force all operations to a specific backend (e.g., for profiling baselines)
+    public var forcedBackend: HardwareBackend? = nil
+    
+    /// Global flag to enable 3-Way Splitting (GPU + ANE + CPU) instead of 2-Way Splitting (GPU + CPU)
+    public var useThreeWaySplit: Bool = false
+    
     // Operation profiles: measured performance for each (operation, size, backend)
     private var profiles: [String: [HardwareBackend: Double]] = [:]  // time in ms
     private let lock = NSLock()
@@ -60,6 +69,14 @@ public final class IntelligentRouter: @unchecked Sendable {
     
     /// Route an operation to the best backend
     public func route(_ op: SiliconOperation) -> RoutingDecision {
+        if let forced = forcedBackend {
+            return RoutingDecision(
+                backend: forced,
+                reason: "Forced backend configuration",
+                expectedSpeedup: 1.0
+            )
+        }
+        
         switch op {
         case .matmul(let a, _):
             return routeMatmul(size: a.count)
@@ -157,8 +174,12 @@ public final class IntelligentRouter: @unchecked Sendable {
             return try executeCPUMatmul(a, b)
         case .gpu:
             // Use smart split for medium/large matrices
-            if a.count > 250000 {
-                return try SmartScheduler.shared.smartMatmul(a, b)
+            if enableSplitting && a.count > 250000 {
+                if useThreeWaySplit {
+                    return try SmartScheduler3.shared.smartMatmul(a, b)
+                } else {
+                    return try SmartScheduler.shared.smartMatmul(a, b)
+                }
             }
             return try GPUEngine.shared.matmulMPS(a, b)
         case .ane:

@@ -148,6 +148,12 @@ def backward(tensor, grad: Optional['Tensor'] = None):
                 a_np = _get_numpy(a)
                 _add_grad(a, g * (a_np > 0))
                 
+        elif op == 'sigmoid':
+            a, = args
+            if a.requires_grad:
+                t_np = _get_numpy(t)
+                _add_grad(a, g * t_np * (1.0 - t_np))
+                
         elif op == 'cross_entropy':
             input_tensor, target, probs = args
             if input_tensor.requires_grad:
@@ -162,8 +168,21 @@ def backward(tensor, grad: Optional['Tensor'] = None):
                 _add_grad(input_tensor, grad_ce)
                 
         elif op == 'softmax':
-            # Softmax backward is complex, skip for now
-            pass
+            a, axis = args
+            if a.requires_grad:
+                y_np = _get_numpy(t)
+                sum_gy = np.sum(g * y_np, axis=axis, keepdims=True)
+                _add_grad(a, y_np * (g - sum_gy))
+                
+        elif op == 'transpose':
+            a, = args
+            if a.requires_grad:
+                _add_grad(a, g.T)
+                
+        elif op == 'reshape':
+            a, orig_shape = args
+            if a.requires_grad:
+                _add_grad(a, g.reshape(orig_shape))
 
 
 def no_grad():

@@ -365,7 +365,7 @@ class Tensor:
         else:
             result = Tensor(self._np.T)
         result.requires_grad = self.requires_grad
-        result._ctx = None
+        result._ctx = ('transpose', self) if result.requires_grad else None
         result.grad = None
         return result
     
@@ -380,7 +380,7 @@ class Tensor:
         else:
             result = Tensor(self._np.reshape(shape))
         result.requires_grad = self.requires_grad
-        result._ctx = None
+        result._ctx = ('reshape', self, self.shape) if result.requires_grad else None
         result.grad = None
         return result
     

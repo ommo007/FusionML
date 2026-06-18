@@ -77,16 +77,8 @@ class BackendProfiler:
                 times.append((time.perf_counter() - t0) * 1000)
             results["gpu"] = np.median(times)
         
-        # ANE (CoreML)
-        if HAS_COREML:
-            # Warmup (includes compilation on first call)
-            _ = ane_matmul(a, b)
-            times = []
-            for _ in range(iterations):
-                t0 = time.perf_counter()
-                _ = ane_matmul(a, b)
-                times.append((time.perf_counter() - t0) * 1000)
-            results["ane"] = np.median(times)
+        # ANE (CoreML) - Disabled during calibration to prevent OOM
+        pass
         
         # Store in history
         key = f"matmul_{size}"

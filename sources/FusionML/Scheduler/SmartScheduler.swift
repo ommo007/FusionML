@@ -3,6 +3,8 @@
 
 import Foundation
 import Accelerate
+import Metal
+
 
 /// Measured performance for a backend at a specific workload
 public struct PerformanceProfile: Codable {
@@ -36,6 +38,8 @@ public final class SmartScheduler: @unchecked Sendable {
     
     // Performance profiles: [operation_size -> [backend -> profile]]
     private var profiles: [String: [HardwareBackend: PerformanceProfile]] = [:]
+    // Empirically tuned split ratios: [operation_size -> cpuRatio]
+    private var tunedRatios: [String: Double] = [:]
     private let lock = NSLock()
     
     // Calibration status
@@ -45,35 +49,137 @@ public final class SmartScheduler: @unchecked Sendable {
     
     // MARK: - Calibration
     
-    /// Calibrate by measuring actual backend performance
+    /// Calibrate by measuring actual backend performance and sweeping concurrent split ratios
     public func calibrate(sizes: [Int] = [256, 512, 1024, 2048]) throws {
         print("📐 Calibrating SmartScheduler...")
         
         for size in sizes {
-            let a = try Tensor.random([size, size])
-            let b = try Tensor.random([size, size])
-            
-            let key = "matmul_\(size)"
-            
-            // Measure CPU
-            let cpuTime = try measureBackend(.cpu, size: size) {
-                try Tensor.matmul(a, b)
+            try autoreleasepool {
+                let a = try Tensor.random([size, size])
+                let b = try Tensor.random([size, size])
+                
+                let key = "matmul_\(size)"
+                
+                // Measure CPU
+                let cpuTime = try measureBackend(.cpu, size: size) {
+                    try Tensor.matmul(a, b)
+                }
+                recordProfile(key: key, backend: .cpu, timeMs: cpuTime)
+                
+                // Measure GPU (MPS)
+                let gpuTime = try measureBackend(.gpu, size: size) {
+                    try GPUEngine.shared.matmulMPS(a, b)
+                }
+                recordProfile(key: key, backend: .gpu, timeMs: gpuTime)
+                
+                let cpuGFLOPS = (2.0 * Double(size * size * size) / cpuTime) / 1_000_000
+                let gpuGFLOPS = (2.0 * Double(size * size * size) / gpuTime) / 1_000_000
+                
+                // Localized search sweep around the theoretical ratio to maximize efficiency
+                let cpuThroughput = 1.0 / cpuTime
+                let gpuThroughput = 1.0 / gpuTime
+                let total = cpuThroughput + gpuThroughput
+                
+                let theoreticalRatio = cpuThroughput / total
+                var bestRatio = theoreticalRatio
+                var minTime = Double.infinity
+                
+                let startRatio = max(0.05, theoreticalRatio - 0.15)
+                let endRatio = min(0.95, theoreticalRatio + 0.15)
+                
+                // Fine-grained localized sweep to find the physical optimum
+                for r in stride(from: startRatio, through: endRatio, by: 0.03) {
+                    autoreleasepool {
+                        do {
+                            let testTime = try measureSplit(a, b, cpuRatio: r)
+                            if testTime < minTime {
+                                minTime = testTime
+                                bestRatio = r
+                            }
+                        } catch {
+                            // Ignore
+                        }
+                    }
+                }
+                
+                lock.lock()
+                tunedRatios[key] = bestRatio
+                lock.unlock()
+                
+                let optimalGFLOPS = (2.0 * Double(size * size * size) / minTime) / 1_000_000
+                print("  \(size)×\(size): CPU \(String(format: "%.0f", cpuGFLOPS)) GFLOPS, GPU \(String(format: "%.0f", gpuGFLOPS)) GFLOPS, Smart Split (Tuned Ratio: \(String(format: "%.2f", bestRatio))) \(String(format: "%.0f", optimalGFLOPS)) GFLOPS")
+                
+                // Clean up calibration buffers immediately
+                MemoryManager.shared.clearPool()
             }
-            recordProfile(key: key, backend: .cpu, timeMs: cpuTime)
-            
-            // Measure GPU (MPS)
-            let gpuTime = try measureBackend(.gpu, size: size) {
-                try GPUEngine.shared.matmulMPS(a, b)
-            }
-            recordProfile(key: key, backend: .gpu, timeMs: gpuTime)
-            
-            let cpuGFLOPS = (2.0 * Double(size * size * size) / cpuTime) / 1_000_000
-            let gpuGFLOPS = (2.0 * Double(size * size * size) / gpuTime) / 1_000_000
-            print("  \(size)×\(size): CPU \(String(format: "%.0f", cpuGFLOPS)) GFLOPS, GPU \(String(format: "%.0f", gpuGFLOPS)) GFLOPS")
         }
         
         isCalibrated = true
         print("✅ Calibration complete!")
+    }
+    
+    /// Calibrate shapes by measuring actual performance and sweeping split ratios
+    public func calibrateShapes(_ shapes: [(M: Int, N: Int, K: Int)]) throws {
+        print("📐 Calibrating SmartScheduler Shapes...")
+        for shape in shapes {
+            try autoreleasepool {
+                let M = shape.M
+                let N = shape.N
+                let K = shape.K
+                let key = "matmul_\(M)_\(N)_\(K)"
+                
+                let a = try Tensor.random([M, K])
+                let b = try Tensor.random([K, N])
+                
+                // Measure CPU
+                let cpuTime = try measureBackend(.cpu, size: M) {
+                    try Tensor.matmul(a, b)
+                }
+                recordProfile(key: key, backend: .cpu, timeMs: cpuTime)
+                
+                // Measure GPU
+                let gpuTime = try measureBackend(.gpu, size: M) {
+                    try GPUEngine.shared.matmulMPS(a, b)
+                }
+                recordProfile(key: key, backend: .gpu, timeMs: gpuTime)
+                
+                let cpuThroughput = 1.0 / cpuTime
+                let gpuThroughput = 1.0 / gpuTime
+                let total = cpuThroughput + gpuThroughput
+                let theoreticalRatio = cpuThroughput / total
+                
+                var bestRatio = theoreticalRatio
+                var minTime = Double.infinity
+                
+                let startRatio = max(0.05, theoreticalRatio - 0.15)
+                let endRatio = min(0.95, theoreticalRatio + 0.15)
+                
+                for r in stride(from: startRatio, through: endRatio, by: 0.03) {
+                    autoreleasepool {
+                        do {
+                            let testTime = try measureSplit(a, b, cpuRatio: r)
+                            if testTime < minTime {
+                                minTime = testTime
+                                bestRatio = r
+                            }
+                        } catch {}
+                    }
+                }
+                
+                lock.lock()
+                tunedRatios[key] = bestRatio
+                lock.unlock()
+                
+                let cpuGFLOPS = (2.0 * Double(M * N * K) / cpuTime) / 1_000_000
+                let gpuGFLOPS = (2.0 * Double(M * N * K) / gpuTime) / 1_000_000
+                let optimalGFLOPS = (2.0 * Double(M * N * K) / minTime) / 1_000_000
+                print("  \(M)×\(N)×\(K): CPU \(String(format: "%.0f", cpuGFLOPS)) GFLOPS, GPU \(String(format: "%.0f", gpuGFLOPS)) GFLOPS, Smart Split (Tuned Ratio: \(String(format: "%.2f", bestRatio))) \(String(format: "%.0f", optimalGFLOPS)) GFLOPS")
+                
+                MemoryManager.shared.clearPool()
+            }
+        }
+        isCalibrated = true
+        print("✅ Shapes calibration complete!")
     }
     
     private func measureBackend<T>(_ backend: HardwareBackend, size: Int, operation: () throws -> T) throws -> Double {
@@ -88,6 +194,25 @@ public final class SmartScheduler: @unchecked Sendable {
             _ = try operation()
         }
         return (CFAbsoluteTimeGetCurrent() - start) * 1000 / 5
+    }
+    
+    private func measureSplit(_ a: Tensor, _ b: Tensor, cpuRatio: Double) throws -> Double {
+        // Warmup
+        for _ in 0..<2 {
+            try autoreleasepool {
+                _ = try smartMatmulWithRatio(a, b, cpuRatio: cpuRatio)
+            }
+        }
+        
+        // Measure
+        let start = CFAbsoluteTimeGetCurrent()
+        let iterations = 3
+        for _ in 0..<iterations {
+            try autoreleasepool {
+                _ = try smartMatmulWithRatio(a, b, cpuRatio: cpuRatio)
+            }
+        }
+        return (CFAbsoluteTimeGetCurrent() - start) * 1000 / Double(iterations)
     }
     
     private func recordProfile(key: String, backend: HardwareBackend, timeMs: Double) {
@@ -106,27 +231,27 @@ public final class SmartScheduler: @unchecked Sendable {
     // MARK: - Optimal Split Ratios
     
     /// Calculate optimal work split ratio based on measured throughput
-    public func optimalSplitRatio(for size: Int) -> (cpu: Double, gpu: Double) {
-        let key = "matmul_\(size)"
+    public func optimalSplitRatio(for M: Int, N: Int, K: Int) -> (cpu: Double, gpu: Double) {
+        let key = "matmul_\(M)_\(N)_\(K)"
         
         lock.lock()
-        let profs = profiles[key]
+        let tuned = tunedRatios[key]
         lock.unlock()
         
-        guard let profs = profs,
-              let cpuProf = profs[.cpu],
-              let gpuProf = profs[.gpu] else {
-            // Default 50/50 if not calibrated
-            return (0.5, 0.5)
+        if let cpuRatio = tuned {
+            return (cpuRatio, 1.0 - cpuRatio)
         }
         
-        let cpuThroughput = cpuProf.throughput
-        let gpuThroughput = gpuProf.throughput
-        let total = cpuThroughput + gpuThroughput
+        // Fallback to square calibration
+        lock.lock()
+        let squareTuned = tunedRatios["matmul_\(M)"]
+        lock.unlock()
+        if let cpuRatio = squareTuned {
+            return (cpuRatio, 1.0 - cpuRatio)
+        }
         
-        guard total > 0 else { return (0.5, 0.5) }
-        
-        return (cpuThroughput / total, gpuThroughput / total)
+        // Default
+        return (0.30, 0.70)
     }
     
     // MARK: - Intelligent Matmul
@@ -142,6 +267,7 @@ public final class SmartScheduler: @unchecked Sendable {
         
         let M = a.shape[0]
         let N = b.shape[1]
+        let K = a.shape[1]
         
         // For small matrices, use single best backend
         if M < 512 {
@@ -149,77 +275,81 @@ public final class SmartScheduler: @unchecked Sendable {
         }
         
         // Get optimal split ratio
-        let (cpuRatio, gpuRatio) = optimalSplitRatio(for: M)
+        let (cpuRatio, _) = optimalSplitRatio(for: M, N: N, K: K)
+        return try smartMatmulWithRatio(a, b, cpuRatio: cpuRatio)
+    }
+    
+    private func smartMatmulWithRatio(_ a: Tensor, _ b: Tensor, cpuRatio: Double) throws -> Tensor {
+        let M = a.shape[0]
+        let N = b.shape[1]
+        let K = a.shape[1]
         
-        // Calculate row splits
         let cpuRows = Int(Double(M) * cpuRatio)
         let gpuRows = M - cpuRows
         
         // If one backend dominates, just use it
-        if cpuRatio > 0.9 {
+        if cpuRatio > 0.95 {
             return try Tensor.matmul(a, b)
         }
-        if gpuRatio > 0.9 {
+        if cpuRatio < 0.05 {
             return try GPUEngine.shared.matmulMPS(a, b)
         }
         
-        // Parallel split execution
         let result = try Tensor(shape: [M, N], dtype: a.dtype)
         let group = DispatchGroup()
-        var cpuError: Error?
         var gpuError: Error?
         
-        // CPU portion
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                // Direct pointer arithmetic for zero-copy view
-                let aPtr = a.buffer.pointer.bindMemory(to: Float.self, capacity: a.count)
-                let bPtr = b.buffer.pointer.bindMemory(to: Float.self, capacity: b.count)
-                let rPtr = result.buffer.pointer.bindMemory(to: Float.self, capacity: result.count)
-                
-                let K = a.shape[1]
-                
-                cblas_sgemm(
-                    CblasRowMajor,
-                    CblasNoTrans,
-                    CblasNoTrans,
-                    Int32(cpuRows),
-                    Int32(N),
-                    Int32(K),
-                    1.0,
-                    aPtr, Int32(K),  // First cpuRows rows of A
-                    bPtr, Int32(N),
-                    0.0,
-                    rPtr, Int32(N)   // First cpuRows rows of result
-                )
-            } catch {
-                cpuError = error
-            }
-            group.leave()
-        }
+        // Bind pointers and extract buffers on the caller thread
+        let aPtr = a.buffer.pointer.bindMemory(to: Float.self, capacity: a.count)
+        let bPtr = b.buffer.pointer.bindMemory(to: Float.self, capacity: b.count)
+        let rPtr = result.buffer.pointer.bindMemory(to: Float.self, capacity: result.count)
+        
+        let aMetal = a.metalBuffer
+        let bMetal = b.metalBuffer
+        let rMetal = result.metalBuffer
         
         // GPU portion
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                // Create view of remaining rows
-                let aSlice = try self.tensorView(a, rowStart: cpuRows, rowCount: gpuRows)
-                let gpuResult = try GPUEngine.shared.matmulMPS(aSlice, b)
-                
-                // Copy to result
-                let srcPtr = gpuResult.buffer.pointer
-                let dstPtr = result.buffer.pointer.advanced(by: cpuRows * N * 4)
-                memcpy(dstPtr, srcPtr, gpuRows * N * 4)
-            } catch {
-                gpuError = error
+        if gpuRows > 0 {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async { [aMetal, bMetal, rMetal] in
+                do {
+                    try GPUEngine.shared.matmulRawMPS(
+                        a: aMetal,
+                        b: bMetal,
+                        result: rMetal,
+                        M: gpuRows,
+                        N: N,
+                        K: K,
+                        aOffset: cpuRows * K * 4,
+                        resultOffset: cpuRows * N * 4
+                    )
+                } catch {
+                    gpuError = error
+                }
+                group.leave()
             }
-            group.leave()
+        }
+        
+        // CPU portion (runs synchronously on caller thread in parallel with GPU)
+        if cpuRows > 0 {
+            cblas_sgemm(
+                CblasRowMajor,
+                CblasNoTrans,
+                CblasNoTrans,
+                Int32(cpuRows),
+                Int32(N),
+                Int32(K),
+                1.0,
+                aPtr, Int32(K),  // First cpuRows rows of A
+                bPtr, Int32(N),
+                0.0,
+                rPtr, Int32(N)   // First cpuRows rows of result
+            )
         }
         
         group.wait()
         
-        if let error = cpuError ?? gpuError {
+        if let error = gpuError {
             throw error
         }
         

@@ -13,6 +13,9 @@ public final class GPUEngine: @unchecked Sendable {
     public let commandQueue: MTLCommandQueue
     private var library: MTLLibrary?
     private var pipelines: [String: MTLComputePipelineState] = [:]
+    private var mpsKernels: [String: MPSMatrixMultiplication] = [:]
+    private let kernelLock = NSLock()
+
     
     private init() {
         self.device = MemoryManager.shared.device
@@ -108,29 +111,36 @@ public final class GPUEngine: @unchecked Sendable {
     }
     
     /// Matrix multiplication using MPS (for comparison)
-    public func matmulMPS(_ a: Tensor, _ b: Tensor) throws -> Tensor {
-        guard a.ndim == 2 && b.ndim == 2 else {
-            throw MemoryError.invalidShape
-        }
-        guard a.shape[1] == b.shape[0] else {
-            throw MemoryError.invalidShape
-        }
-        
-        let M = a.shape[0]
-        let K = a.shape[1]
-        let N = b.shape[1]
-        
-        let result = try Tensor(shape: [M, N], dtype: .float32)
-        
+    /// Lower-level matrix multiplication using raw Metal buffers directly to prevent Swift closure captures
+    public func matmulRawMPS(
+        a: MTLBuffer,
+        b: MTLBuffer,
+        result: MTLBuffer,
+        M: Int,
+        N: Int,
+        K: Int,
+        aOffset: Int = 0,
+        resultOffset: Int = 0
+    ) throws {
         let aDesc = MPSMatrixDescriptor(rows: M, columns: K, rowBytes: K * 4, dataType: .float32)
         let bDesc = MPSMatrixDescriptor(rows: K, columns: N, rowBytes: N * 4, dataType: .float32)
         let cDesc = MPSMatrixDescriptor(rows: M, columns: N, rowBytes: N * 4, dataType: .float32)
         
-        let aMatrix = MPSMatrix(buffer: a.metalBuffer, descriptor: aDesc)
-        let bMatrix = MPSMatrix(buffer: b.metalBuffer, descriptor: bDesc)
-        let cMatrix = MPSMatrix(buffer: result.metalBuffer, descriptor: cDesc)
+        let aMatrix = MPSMatrix(buffer: a, offset: aOffset, descriptor: aDesc)
+        let bMatrix = MPSMatrix(buffer: b, offset: 0, descriptor: bDesc)
+        let cMatrix = MPSMatrix(buffer: result, offset: resultOffset, descriptor: cDesc)
         
-        let matmul = MPSMatrixMultiplication(device: device, resultRows: M, resultColumns: N, interiorColumns: K)
+        let kernelKey = "\(M)_\(N)_\(K)"
+        kernelLock.lock()
+        let matmul: MPSMatrixMultiplication
+        if let cached = mpsKernels[kernelKey] {
+            matmul = cached
+            kernelLock.unlock()
+        } else {
+            matmul = MPSMatrixMultiplication(device: device, resultRows: M, resultColumns: N, interiorColumns: K)
+            mpsKernels[kernelKey] = matmul
+            kernelLock.unlock()
+        }
         
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
             throw MemoryError.deviceNotAvailable
@@ -140,6 +150,40 @@ public final class GPUEngine: @unchecked Sendable {
         
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
+    }
+    
+    /// Matrix multiplication using MPS (with optional zero-copy offsets)
+    public func matmulMPS(
+        _ a: Tensor,
+        _ b: Tensor,
+        aOffset: Int = 0,
+        resultOffset: Int = 0,
+        customResult: Tensor? = nil,
+        customM: Int? = nil
+    ) throws -> Tensor {
+        guard a.ndim == 2 && b.ndim == 2 else {
+            throw MemoryError.invalidShape
+        }
+        guard a.shape[1] == b.shape[0] else {
+            throw MemoryError.invalidShape
+        }
+        
+        let M = customM ?? a.shape[0]
+        let K = a.shape[1]
+        let N = b.shape[1]
+        
+        let result = try customResult ?? Tensor(shape: [M, N], dtype: .float32)
+        
+        try matmulRawMPS(
+            a: a.metalBuffer,
+            b: b.metalBuffer,
+            result: result.metalBuffer,
+            M: M,
+            N: N,
+            K: K,
+            aOffset: aOffset,
+            resultOffset: resultOffset
+        )
         
         return result
     }
