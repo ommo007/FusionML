@@ -183,19 +183,30 @@ if __name__ == "__main__":
     print_summary(results)
 
     # Save results
-    out_dir = os.path.join(os.path.dirname(__file__), "..", "results", "ablation")
-    os.makedirs(out_dir, exist_ok=True)
-
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    out_path = os.path.join(out_dir, f"ablation_{timestamp}.json")
-    with open(out_path, "w") as f:
-        json.dump({
-            "timestamp": timestamp,
-            "sizes": SIZES,
-            "iterations": ITERATIONS,
-            "has_mlx": HAS_MLX,
-            "has_coreml": HAS_COREML,
-            "results": results,
-        }, f, indent=2)
-
-    print(f"\n💾 Results saved to {out_path}")
+    try:
+        import subprocess
+        cpu = "Unknown"
+        try:
+            r = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True)
+            cpu = r.stdout.strip().replace(" ", "_")
+        except:
+            pass
+            
+        out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../results", cpu))
+        os.makedirs(out_dir, exist_ok=True)
+        
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join(out_dir, f"ablation_{timestamp}.json")
+        with open(out_path, "w") as f:
+            json.dump({
+                "timestamp": timestamp,
+                "cpu": cpu,
+                "sizes": SIZES,
+                "iterations": ITERATIONS,
+                "has_mlx": HAS_MLX,
+                "has_coreml": HAS_COREML,
+                "results": results,
+            }, f, indent=2)
+        print(f"\n💾 Results saved to {out_path}")
+    except Exception as e:
+        print(f"\n⚠️ Could not save results: {e}")

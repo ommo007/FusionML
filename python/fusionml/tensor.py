@@ -342,6 +342,20 @@ class Tensor:
         result.grad = None
         return result
     
+    def var(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
+        """Variance along axis (stays on GPU)"""
+        if self._on_gpu:
+            result = Tensor.__new__(Tensor)
+            result._mlx = mx.var(self._mlx, axis=axis, keepdims=keepdims)
+            result._np = None
+            result._on_gpu = True
+        else:
+            result = Tensor(np.var(self._np, axis=axis, keepdims=keepdims))
+        result.requires_grad = self.requires_grad
+        result._ctx = ('var', self, axis, keepdims) if result.requires_grad else None
+        result.grad = None
+        return result
+
     def max(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
         if self._on_gpu:
             result = Tensor.__new__(Tensor)
@@ -407,12 +421,13 @@ def matmul(a: Tensor, b: Tensor) -> Tensor:
         K = a.shape[1] if len(a.shape) > 1 else 1
         N = b.shape[1] if len(b.shape) > 1 else 1
         min_dim = min(M, K, N)
-        if HAS_TRI and min_dim >= 2048:
-            a_np = a.numpy
-            b_np = b.numpy
+        if HAS_TRI and min_dim >= 1024:
             scheduler = _get_tri_scheduler()
-            c_np = scheduler.tri_matmul(a_np, b_np)
-            result = Tensor(c_np).to_gpu()
+            c_mlx = scheduler.gpu_smart_matmul(a._mlx, b._mlx, b_tensor=b)
+            result = Tensor.__new__(Tensor)
+            result._mlx = c_mlx
+            result._np = None
+            result._on_gpu = True
             result.requires_grad = a.requires_grad or b.requires_grad
             result._ctx = ('matmul', a, b) if result.requires_grad else None
             result.grad = None
@@ -532,6 +547,73 @@ def log_softmax(x: Tensor, axis: int = -1) -> Tensor:
         result = Tensor(x._np - log_sum_exp)
     result.requires_grad = x.requires_grad
     result._ctx = ('log_softmax', x, axis) if result.requires_grad else None
+    result.grad = None
+    return result
+
+
+def silu(x: Tensor) -> Tensor:
+    """SiLU (Swish) activation: x * sigmoid(x) — GPU-native, fused"""
+    if x._on_gpu:
+        result = Tensor.__new__(Tensor)
+        result._mlx = x._mlx * mx.sigmoid(x._mlx)
+        result._np = None
+        result._on_gpu = True
+    else:
+        sx = 1 / (1 + np.exp(-x._np))
+        result = Tensor(x._np * sx)
+    result.requires_grad = x.requires_grad
+    result._ctx = ('silu', x) if result.requires_grad else None
+    result.grad = None
+    return result
+
+
+def gelu(x: Tensor) -> Tensor:
+    """GELU activation (tanh approximation) — GPU-native"""
+    if x._on_gpu:
+        result = Tensor.__new__(Tensor)
+        x_mlx = x._mlx
+        result._mlx = 0.5 * x_mlx * (1 + mx.tanh(
+            mx.sqrt(mx.array(2.0 / np.pi)) * (x_mlx + 0.044715 * x_mlx ** 3)
+        ))
+        result._np = None
+        result._on_gpu = True
+    else:
+        data = x._np
+        result = Tensor((0.5 * data * (1 + np.tanh(
+            np.sqrt(2 / np.pi) * (data + 0.044715 * data ** 3)
+        ))).astype(np.float32))
+    result.requires_grad = x.requires_grad
+    result._ctx = ('gelu', x) if result.requires_grad else None
+    result.grad = None
+    return result
+
+
+def layer_norm(x: Tensor, gamma: Tensor, beta: Tensor, eps: float = 1e-5) -> Tensor:
+    """
+    Layer normalization over last dimension — GPU-native.
+    Stays entirely on MLX when inputs are on GPU.
+    """
+    if x._on_gpu and HAS_MLX:
+        x_mlx = x._mlx
+        g_mlx = gamma._mlx if gamma._on_gpu else mx.array(gamma._np)
+        b_mlx = beta._mlx if beta._on_gpu else mx.array(beta._np)
+        mean = mx.mean(x_mlx, axis=-1, keepdims=True)
+        var = mx.var(x_mlx, axis=-1, keepdims=True)
+        normed = g_mlx * (x_mlx - mean) / mx.sqrt(var + eps) + b_mlx
+        result = Tensor.__new__(Tensor)
+        result._mlx = normed
+        result._np = None
+        result._on_gpu = True
+    else:
+        x_np = x._np if x._np is not None else x.numpy
+        g_np = gamma._np if gamma._np is not None else gamma.numpy
+        b_np = beta._np if beta._np is not None else beta.numpy
+        mean = np.mean(x_np, axis=-1, keepdims=True)
+        var = np.var(x_np, axis=-1, keepdims=True)
+        normed = g_np * (x_np - mean) / np.sqrt(var + eps) + b_np
+        result = Tensor(normed.astype(np.float32))
+    result.requires_grad = x.requires_grad or gamma.requires_grad or beta.requires_grad
+    result._ctx = ('layer_norm', x, gamma, beta, eps) if result.requires_grad else None
     result.grad = None
     return result
 

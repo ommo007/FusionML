@@ -60,9 +60,9 @@ fi
 PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo "  Python:   $PY_VER"
 
-echo -e "${YELLOW}Cloning FusionML...${NC}"
+echo -e "${YELLOW}Copying local FusionML files...${NC}"
 cd "$WORK_DIR"
-git clone --depth 1 --branch benchmarks https://github.com/ommo007/FusionML.git 2>/dev/null
+cp -R "${SCRIPT_DIR}/../" ./FusionML
 cd FusionML
 
 echo -e "${YELLOW}Installing dependencies...${NC}"

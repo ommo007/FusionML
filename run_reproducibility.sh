@@ -53,10 +53,19 @@ echo -e "\n${GREEN}Starting Benchmarks... Results will be saved to $REPORT_FILE$
     echo "---------------------------------------------------------------"
     
     echo -e "\n1. Running Comparative Matmul Benchmark (End-to-End)..."
-    python3 benchmarks/python/head_to_head.py --quiet --output benchmarks/results/reproducibility
+    python3 benchmarks/python/head_to_head.py --quiet --output benchmarks/results
     
-    echo -e "\n2. Running Transformer Encoder Block Benchmark..."
+    echo -e "\n2. Running Ablation Study Sweep..."
+    python3 benchmarks/python/ablation_benchmark.py
+    
+    echo -e "\n3. Running Model-Level Comparative Sweep..."
+    python3 benchmarks/python/model_comparison.py
+    
+    echo -e "\n4. Running Transformer Encoder Block Benchmark..."
     python3 benchmarks/python/benchmark_transformer.py
+    
+    echo -e "\n5. Running Swift Native Benchmarks..."
+    swift run -c release BenchmarkExample
 
 } | tee "$REPORT_FILE"
 

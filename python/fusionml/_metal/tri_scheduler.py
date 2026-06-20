@@ -182,6 +182,7 @@ class TriComputeScheduler:
         
         # Persistent thread pool — eliminates thread creation overhead
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+        self._cpu_cache = {}
     
     def __del__(self):
         """Clean up thread pool."""
@@ -330,6 +331,88 @@ class TriComputeScheduler:
         closest = min(calibrated_sizes, key=lambda s: abs(s - size))
         return self.calibrated_ratios[f"matmul_{closest}"]
     
+    def _get_cached_np(self, mlx_arr, tensor_obj=None) -> np.ndarray:
+        """Get CPU NumPy array of an MLX array using a cache keyed by array object ID."""
+        is_param = getattr(tensor_obj, 'is_parameter', False)
+        if is_param:
+            key = id(mlx_arr)
+            if key in self._cpu_cache:
+                return self._cpu_cache[key]
+        
+        mx.eval(mlx_arr)
+        arr_np = np.array(mlx_arr)
+        
+        if is_param:
+            if len(self._cpu_cache) > 200:
+                self._cpu_cache.clear()
+            self._cpu_cache[key] = arr_np
+        return arr_np
+
+    def gpu_smart_matmul(self, a_mlx, b_mlx, b_tensor=None) -> 'mx.array':
+        """
+        GPU-native smart split matmul.
+        Splits rows of A between GPU and CPU without copying the GPU part to CPU.
+        Uses cached CPU weights to avoid copying the weight matrix B.
+        """
+        M, K = a_mlx.shape
+        K2, N = b_mlx.shape
+        min_dim = min(M, K, N)
+        
+        # Fallback to pure GPU if size is small
+        if min_dim < self.CPU_ONLY_THRESHOLD:
+            return a_mlx @ b_mlx
+            
+        # Get ratios
+        ratios = self.get_ratios(min_dim)
+        if ratios:
+            gpu_ratio = ratios.get("gpu", 0.0)
+            cpu_ratio = ratios.get("cpu", 0.0)
+        else:
+            gpu_ratio, cpu_ratio = 0.70, 0.30
+        # print(f"DEBUG PATH: min_dim={min_dim}, cpu_ratio={cpu_ratio}, gpu_ratio={gpu_ratio}")
+        
+        if cpu_ratio < 0.05:
+            return a_mlx @ b_mlx
+        if gpu_ratio < 0.05:
+            # CPU only
+            a_np = np.array(a_mlx)
+            b_np = self._get_cached_np(b_mlx, b_tensor)
+            return mx.array(np.matmul(a_np, b_np))
+            
+        cpu_rows = int(M * cpu_ratio)
+        gpu_rows = M - cpu_rows
+        
+        # Slice A
+        a_cpu_mlx = a_mlx[:cpu_rows]
+        a_gpu_mlx = a_mlx[cpu_rows:]
+        
+        # Copy A's CPU portion (only the sliced rows)
+        a_cpu_np = np.array(a_cpu_mlx)
+        
+        # Get B on CPU (cached)
+        b_np = self._get_cached_np(b_mlx, b_tensor)
+        
+        import threading
+        cpu_res = None
+        def cpu_work():
+            nonlocal cpu_res
+            cpu_res = np.matmul(a_cpu_np, b_np)
+            
+        # Run CPU matmul in background thread
+        t = threading.Thread(target=cpu_work)
+        t.start()
+        
+        # Run GPU matmul on caller thread
+        c_gpu_mlx = a_gpu_mlx @ b_mlx
+        mx.eval(c_gpu_mlx)
+        
+        # Wait for CPU
+        t.join()
+        
+        # Upload CPU result to GPU and concatenate
+        c_cpu_mlx = mx.array(cpu_res)
+        return mx.concatenate([c_cpu_mlx, c_gpu_mlx], axis=0)
+
     def tri_matmul(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         """
         Matrix multiplication using all available compute units in parallel.

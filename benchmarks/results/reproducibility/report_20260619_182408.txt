@@ -1,0 +1,333 @@
+FusionML Reproducibility Report
+Date: Fri Jun 19 18:24:08 IST 2026
+---------------------------------------------------------------
+SYSTEM SPECIFICATIONS:
+---------------------------------------------------------------
+      Model Name: MacBook Air
+      Chip: Apple M1
+      Total Number of Cores: 8 (4 Performance and 4 Efficiency)
+      Memory: 8 GB
+ProductName:		macOS
+ProductVersion:		26.4.1
+BuildVersion:		25E253
+---------------------------------------------------------------
+
+1. Running Comparative Matmul Benchmark (End-to-End)...
+
+2. Running Ablation Study Sweep...
+======================================================================
+  FusionML Ablation Study — NeurIPS 2026
+======================================================================
+  Backends available: CPU=True, GPU(MLX)=True, ANE(CoreML)=True
+  Sizes: [256, 512, 1024, 2048, 4096]
+  Iterations: 20  |  Warmup: 5
+======================================================================
+
+  🧠 Warming up ANE (CoreML compilation, may take 30-60s)...
+🧠 Warming up ANE (static weight mode)...
+  ✓ matmul 256x256: compiled in 197ms
+  ✓ matmul 512x512: compiled in 183ms
+  ✓ matmul 1024x1024: compiled in 287ms
+  ANE cache: 3 models ready
+  ANE warmup complete.
+
+──────────────────────────────────────────────────────────────────────
+  Matrix Size: 256×256
+──────────────────────────────────────────────────────────────────────
+  Config           |  Median (ms) |   Std (ms) |  Speedup
+  -----------------+--------------+------------+---------
+  CPU-only         | benchmarking...
+  CPU-only         |      0.170ms |    0.014ms |   1.00×
+  GPU-only         | benchmarking...
+  GPU-only         |      0.169ms |    0.035ms |   1.00×
+  GPU+CPU          | benchmarking...
+  GPU+CPU          |      0.171ms |    0.186ms |   0.99×
+  Tri-Compute      | benchmarking...
+  Tri-Compute      |      0.224ms |    0.070ms |   0.76×
+  Random-Route     | benchmarking...
+  Random-Route     |      0.432ms |    0.568ms |   0.39×
+
+  🏆 Winner: GPU-only (0.169ms)
+
+──────────────────────────────────────────────────────────────────────
+  Matrix Size: 512×512
+──────────────────────────────────────────────────────────────────────
+  Config           |  Median (ms) |   Std (ms) |  Speedup
+  -----------------+--------------+------------+---------
+  CPU-only         | benchmarking...
+  CPU-only         |      1.193ms |    0.306ms |   1.00×
+  GPU-only         | benchmarking...
+  GPU-only         |      1.090ms |    0.035ms |   1.09×
+  GPU+CPU          | benchmarking...
+  GPU+CPU          |      4.168ms |    1.120ms |   0.29×
+  Tri-Compute      | benchmarking...
+  Tri-Compute      |      3.924ms |    1.412ms |   0.30×
+  Random-Route     | benchmarking...
+  Random-Route     |      5.421ms |    1.660ms |   0.22×
+
+  🏆 Winner: GPU-only (1.090ms)
+
+──────────────────────────────────────────────────────────────────────
+  Matrix Size: 1024×1024
+──────────────────────────────────────────────────────────────────────
+  Config           |  Median (ms) |   Std (ms) |  Speedup
+  -----------------+--------------+------------+---------
+  CPU-only         | benchmarking...
+  CPU-only         |      9.022ms |    0.532ms |   1.00×
+  GPU-only         | benchmarking...
+  GPU-only         |      4.020ms |    0.446ms |   2.24×
+  GPU+CPU          | benchmarking...
+  GPU+CPU          |      8.721ms |    0.813ms |   1.03×
+  Tri-Compute      | benchmarking...
+  Tri-Compute      |      7.856ms |    0.095ms |   1.15×
+  Random-Route     | benchmarking...
+  Random-Route     |     10.130ms |    1.514ms |   0.89×
+
+  🏆 Winner: GPU-only (4.020ms)
+
+──────────────────────────────────────────────────────────────────────
+  Matrix Size: 2048×2048
+──────────────────────────────────────────────────────────────────────
+  Config           |  Median (ms) |   Std (ms) |  Speedup
+  -----------------+--------------+------------+---------
+  CPU-only         | benchmarking...
+  CPU-only         |     66.750ms |    6.518ms |   1.00×
+  GPU-only         | benchmarking...
+  GPU-only         |     13.797ms |    0.857ms |   4.84×
+  GPU+CPU          | benchmarking...
+  GPU+CPU          |     19.509ms |    2.102ms |   3.42×
+  Tri-Compute      | benchmarking...
+  Tri-Compute      |     19.791ms |    0.607ms |   3.37×
+  Random-Route     | benchmarking...
+  Random-Route     |     43.618ms |   13.506ms |   1.53×
+
+  🏆 Winner: GPU-only (13.797ms)
+
+──────────────────────────────────────────────────────────────────────
+  Matrix Size: 4096×4096
+──────────────────────────────────────────────────────────────────────
+  Config           |  Median (ms) |   Std (ms) |  Speedup
+  -----------------+--------------+------------+---------
+  CPU-only         | benchmarking...
+  CPU-only         |    448.942ms |   29.210ms |   1.00×
+  GPU-only         | benchmarking...
+  GPU-only         |     99.620ms |    1.181ms |   4.51×
+  GPU+CPU          | benchmarking...
+  GPU+CPU          |    108.337ms |   19.000ms |   4.14×
+  Tri-Compute      | benchmarking...
+  Tri-Compute      |    110.479ms |    5.476ms |   4.06×
+  Random-Route     | benchmarking...
+  Random-Route     |    265.430ms |  105.747ms |   1.69×
+
+  🏆 Winner: GPU-only (99.620ms)
+
+
+======================================================================
+  ABLATION SUMMARY — Median Latency (ms)
+======================================================================
+    Size |       CPU-only |       GPU-only |        GPU+CPU |    Tri-Compute |   Random-Route
+  -------+----------------+----------------+----------------+----------------+---------------
+     256 |        0.170ms |        0.169ms |        0.171ms |        0.224ms |        0.432ms
+     512 |        1.193ms |        1.090ms |        4.168ms |        3.924ms |        5.421ms
+    1024 |        9.022ms |        4.020ms |        8.721ms |        7.856ms |       10.130ms
+    2048 |       66.750ms |       13.797ms |       19.509ms |       19.791ms |       43.618ms
+    4096 |      448.942ms |       99.620ms |      108.337ms |      110.479ms |      265.430ms
+
+💾 Results saved to /Users/ommohite/Documents/Programming/FusionML/benchmarks/results/Apple_M1/ablation_20260619_182710.json
+
+3. Running Model-Level Comparative Sweep...
+==========================================================================================
+  FusionML Unified Model-Level Benchmark
+  System: Apple M1 (8GB)
+  Architecture: Pre-LN Decoder Block (matches Swift BenchmarkExample)
+==========================================================================================
+  → Running Llama-3-8B Inference on MLX... 344.19 ms
+  → Running Llama-3-8B Inference on PyTorch (MPS)... 313.00 ms
+  → Running Llama-3-8B Inference on FusionML... 339.20 ms
+  → Running Llama-3-8B Training on MLX... 1054.92 ms
+  → Running Llama-3-8B Training on PyTorch (MPS)... 1160.19 ms
+  → Running Llama-3-8B Training on FusionML... 1146.39 ms
+  → Running GPT-2 XL Inference on MLX... 55.13 ms
+  → Running GPT-2 XL Inference on PyTorch (MPS)... 42.98 ms
+  → Running GPT-2 XL Inference on FusionML... 55.67 ms
+  → Running GPT-2 XL Training on MLX... 170.40 ms
+  → Running GPT-2 XL Training on PyTorch (MPS)... 139.84 ms
+  → Running GPT-2 XL Training on FusionML... 190.59 ms
+  → Running MLP Inference on MLX... 25.13 ms
+  → Running MLP Inference on PyTorch (MPS)... 23.67 ms
+  → Running MLP Inference on FusionML... 25.28 ms
+  → Running MLP Training on MLX... 50.61 ms
+  → Running MLP Training on PyTorch (MPS)... 49.95 ms
+  → Running MLP Training on FusionML... 63.44 ms
+
+==========================================================================================
+  UNIFIED MODEL-LEVEL BENCHMARK RESULTS
+  Architecture: Pre-LN Decoder Block (matches Swift BenchmarkExample)
+==========================================================================================
+
+| Model / Mode | SeqLen | Framework | Mean ± Std (ms) | Median (ms) | Min/Max (ms) | vs MLX |
+| --- | --- | --- | --- | --- | --- | --- |
+| Llama-3-8B Inference | 1024 | MLX | 344.11 ± 3.79 | 344.19 | 337.61 / 349.66 | 1.00x |
+| Llama-3-8B Inference | 1024 | PyTorch (MPS) | 313.50 ± 1.50 | 313.00 | 311.18 / 317.54 | 1.10x |
+| Llama-3-8B Inference | 1024 | FusionML | 343.31 ± 10.78 | 339.20 | 333.75 / 365.71 | 1.01x |
+| --- | --- | --- | --- | --- | --- | --- |
+| Llama-3-8B Training | 1024 | MLX | 1054.44 ± 3.42 | 1054.92 | 1048.78 / 1058.42 | 1.00x |
+| Llama-3-8B Training | 1024 | PyTorch (MPS) | 1179.44 ± 32.66 | 1160.19 | 1153.85 / 1239.00 | 0.91x |
+| Llama-3-8B Training | 1024 | FusionML | 1162.35 ± 26.90 | 1146.39 | 1134.58 / 1207.27 | 0.92x |
+| --- | --- | --- | --- | --- | --- | --- |
+| GPT-2 XL Inference | 1024 | MLX | 55.14 ± 0.18 | 55.13 | 54.56 / 55.40 | 1.00x |
+| GPT-2 XL Inference | 1024 | PyTorch (MPS) | 42.99 ± 0.18 | 42.98 | 42.61 / 43.44 | 1.28x |
+| GPT-2 XL Inference | 1024 | FusionML | 55.70 ± 0.20 | 55.67 | 55.19 / 56.04 | 0.99x |
+| --- | --- | --- | --- | --- | --- | --- |
+| GPT-2 XL Training | 1024 | MLX | 170.29 ± 0.92 | 170.40 | 169.03 / 171.59 | 1.00x |
+| GPT-2 XL Training | 1024 | PyTorch (MPS) | 140.89 ± 3.84 | 139.84 | 136.93 / 146.38 | 1.22x |
+| GPT-2 XL Training | 1024 | FusionML | 191.69 ± 2.24 | 190.59 | 189.15 / 195.26 | 0.89x |
+| --- | --- | --- | --- | --- | --- | --- |
+| MLP Inference | 1024 | MLX | 25.12 ± 0.21 | 25.13 | 24.61 / 25.48 | 1.00x |
+| MLP Inference | 1024 | PyTorch (MPS) | 23.67 ± 0.21 | 23.67 | 23.21 / 24.16 | 1.06x |
+| MLP Inference | 1024 | FusionML | 25.04 ± 0.93 | 25.28 | 21.26 / 25.92 | 0.99x |
+| --- | --- | --- | --- | --- | --- | --- |
+| MLP Training | 1024 | MLX | 50.57 ± 0.10 | 50.61 | 50.40 / 50.66 | 1.00x |
+| MLP Training | 1024 | PyTorch (MPS) | 49.94 ± 0.17 | 49.95 | 49.68 / 50.18 | 1.01x |
+| MLP Training | 1024 | FusionML | 64.04 ± 1.15 | 63.44 | 62.64 / 65.77 | 0.80x |
+| --- | --- | --- | --- | --- | --- | --- |
+
+💾 Results saved to: /Users/ommohite/Documents/Programming/FusionML/benchmarks/results/Apple_M1/model_comparison.json
+
+4. Running Transformer Encoder Block Benchmark...
+===============================================================
+   FusionML Transformer Encoder Benchmark (End-to-End)
+===============================================================
+
+Running Benchmark: B=1, L=128, D=512, Heads=8
+Framework          | Mean ± Std (ms)        | Median (ms)  | Min/Max (ms)       | Throughput     
+-----------------------------------------------------------------------------------------------
+MLX (E2E)          |    3.06 ± 0.21   ms |       2.92 |   2.85/3.36   |   43838.7 tok/s ✅ WINNER
+PyTorch (E2E)      |    5.72 ± 0.16   ms |       5.67 |   5.54/6.04   |   22592.4 tok/s 
+NumPy              |    6.08 ± 1.01   ms |       5.85 |   5.05/9.16   |   21877.8 tok/s 
+FusionML           |    6.46 ± 0.87   ms |       6.39 |   5.09/9.07   |   20036.3 tok/s 
+
+Running Benchmark: B=4, L=512, D=512, Heads=8
+Framework          | Mean ± Std (ms)        | Median (ms)  | Min/Max (ms)       | Throughput     
+-----------------------------------------------------------------------------------------------
+MLX (E2E)          |   13.98 ± 0.62   ms |      13.73 |  13.34/15.21  |  149186.6 tok/s ✅ WINNER
+PyTorch (E2E)      |   20.80 ± 0.84   ms |      20.79 |  18.69/21.96  |   98500.2 tok/s 
+FusionML           |  125.40 ± 8.60   ms |     123.73 | 112.19/145.17 |   16551.8 tok/s 
+NumPy              |  135.50 ± 21.24  ms |     132.33 | 113.44/220.34 |   15476.1 tok/s 
+
+Running Benchmark: B=8, L=1024, D=512, Heads=8
+Framework          | Mean ± Std (ms)        | Median (ms)  | Min/Max (ms)       | Throughput     
+-----------------------------------------------------------------------------------------------
+MLX (E2E)          |   70.82 ± 0.82   ms |      70.89 |  68.66/72.29  |  115553.0 tok/s ✅ WINNER
+PyTorch (E2E)      |   77.59 ± 1.61   ms |      77.67 |  74.82/81.16  |  105475.1 tok/s 
+FusionML           |  819.54 ± 164.17 ms |     764.45 | 700.50/1441.48 |   10716.2 tok/s 
+NumPy              |  858.17 ± 34.21  ms |     845.04 | 818.55/947.56 |    9694.2 tok/s 
+
+Running Benchmark: B=1, L=4096, D=512, Heads=8
+Framework          | Mean ± Std (ms)        | Median (ms)  | Min/Max (ms)       | Throughput     
+-----------------------------------------------------------------------------------------------
+MLX (E2E)          |   82.38 ± 2.35   ms |      81.75 |  80.72/92.29  |   50106.5 tok/s ✅ WINNER
+PyTorch (E2E)      |   84.61 ± 0.94   ms |      84.41 |  82.63/86.86  |   48522.8 tok/s 
+NumPy              | 1175.52 ± 38.88  ms |    1164.28 | 1110.07/1279.94 |    3518.1 tok/s 
+FusionML           | 1250.40 ± 177.11 ms |    1174.90 | 1090.78/1846.29 |    3486.3 tok/s 
+
+5. Running Swift Native Benchmarks...
+🔥 FusionML Model Training & Inference Benchmarks
+=================================================================
+🚀 SiliconML 0.1.0 initialized
+   Device: Apple M1
+📐 Calibrating SmartScheduler Shapes...
+  1024×4096×4096: CPU 712 GFLOPS, GPU 1524 GFLOPS, Smart Split (Tuned Ratio: 0.20) 1780 GFLOPS
+  1024×2048×4096: CPU 739 GFLOPS, GPU 1629 GFLOPS, Smart Split (Tuned Ratio: 0.19) 1902 GFLOPS
+  1024×4096×2048: CPU 689 GFLOPS, GPU 1635 GFLOPS, Smart Split (Tuned Ratio: 0.24) 1826 GFLOPS
+  1024×14336×4096: CPU 750 GFLOPS, GPU 1416 GFLOPS, Smart Split (Tuned Ratio: 0.23) 1900 GFLOPS
+  1024×4096×14336: CPU 679 GFLOPS, GPU 1351 GFLOPS, Smart Split (Tuned Ratio: 0.21) 1622 GFLOPS
+  1024×1600×1600: CPU 788 GFLOPS, GPU 1503 GFLOPS, Smart Split (Tuned Ratio: 0.46) 1750 GFLOPS
+  1024×2048×1600: CPU 744 GFLOPS, GPU 1402 GFLOPS, Smart Split (Tuned Ratio: 0.26) 1846 GFLOPS
+  1024×1600×2048: CPU 821 GFLOPS, GPU 1239 GFLOPS, Smart Split (Tuned Ratio: 0.43) 1964 GFLOPS
+  1024×6400×1600: CPU 808 GFLOPS, GPU 1439 GFLOPS, Smart Split (Tuned Ratio: 0.39) 2115 GFLOPS
+  1024×1600×6400: CPU 795 GFLOPS, GPU 1522 GFLOPS, Smart Split (Tuned Ratio: 0.31) 2127 GFLOPS
+  1024×10×4096: CPU 108 GFLOPS, GPU 40 GFLOPS, Smart Split (Tuned Ratio: 0.85) 71 GFLOPS
+  4096×4096×1024: CPU 773 GFLOPS, GPU 1601 GFLOPS, Smart Split (Tuned Ratio: 0.33) 2243 GFLOPS
+  14336×4096×1024: CPU 821 GFLOPS, GPU 1736 GFLOPS, Smart Split (Tuned Ratio: 0.29) 2378 GFLOPS
+  6400×1600×1024: CPU 820 GFLOPS, GPU 1620 GFLOPS, Smart Split (Tuned Ratio: 0.37) 2070 GFLOPS
+✅ Shapes calibration complete!
+📐 Calibrating 3-Way SmartScheduler (GPU + ANE + CPU)...
+  512×512: CPU 1070, GPU 326, ANE 644 GFLOPS
+  1024×1024: CPU 791, GPU 922, ANE 1503 GFLOPS
+  2048×2048: CPU 753, GPU 1530, ANE 2744 GFLOPS
+✅ Calibration complete!
+
+📝 MODEL 1: Llama-3-8B Decoder Layer Block
+   Batch: 4 | Tokens: 256 (SeqLen: 1024) | Hidden Dim: 4096 | FFN Dim: 14336
+-----------------------------------------------------------------
+
+📊 Llama-3-8B Inference:
+   CPU-Only:    872.12 ms
+   GPU-Only:    425.47 ms
+   Smart Split:  313.80 ms ⚡
+   Winner:       Smart Split (26.2% latency reduction / 1.36x speedup)
+
+📊 Llama-3-8B Training Step:
+   CPU-Only:    5717.32 ms
+   GPU-Only:    3386.07 ms
+   Smart Split:  2774.94 ms ⚡
+   Winner:       Smart Split (18.0% latency reduction / 1.22x speedup)
+
+📝 MODEL 2: GPT-2 XL Decoder Layer Block
+   Batch: 4 | Tokens: 256 (SeqLen: 1024) | Hidden Dim: 1600 | FFN Dim: 6400
+-----------------------------------------------------------------
+
+📊 GPT-2 XL Inference:
+   CPU-Only:    147.60 ms
+   GPU-Only:     85.53 ms
+   Smart Split:   58.47 ms ⚡
+   Winner:       Smart Split (31.6% latency reduction / 1.46x speedup)
+
+📊 GPT-2 XL Training Step:
+   CPU-Only:    440.37 ms
+   GPU-Only:    341.43 ms
+   Smart Split:  262.66 ms ⚡
+   Winner:       Smart Split (23.1% latency reduction / 1.30x speedup)
+
+📝 MODEL 3: Deep MLP Block (Wider Dense Classifier)
+   Batch: 1024 | Features: 4096 -> 4096 -> 10
+-----------------------------------------------------------------
+
+📊 MLP Inference:
+   CPU-Only:     50.93 ms
+   GPU-Only:     32.64 ms
+   Smart Split:   22.91 ms ⚡
+   Winner:       Smart Split (29.8% latency reduction / 1.42x speedup)
+
+📊 MLP Training Step:
+   CPU-Only:    192.99 ms
+   GPU-Only:    151.70 ms
+   Smart Split:  121.48 ms ⚡
+   Winner:       Smart Split (19.9% latency reduction / 1.25x speedup)
+
+📐 Square Matrix Multiplication: 512×512
+-----------------------------------------------------------------
+   CPU-Only:        0.22 ms
+   GPU-Only:        1.25 ms
+   2-Way Split:     0.64 ms (Speedup: -186.7%)
+   3-Way Split:     6.43 ms ⚡ (Speedup: -2774.6%)
+
+📐 Square Matrix Multiplication: 1024×1024
+-----------------------------------------------------------------
+   CPU-Only:        2.12 ms
+   GPU-Only:        3.74 ms
+   2-Way Split:     1.28 ms (Speedup: 39.7%)
+   3-Way Split:     6.51 ms ⚡ (Speedup: -207.4%)
+
+📐 Square Matrix Multiplication: 2048×2048
+-----------------------------------------------------------------
+   CPU-Only:       20.31 ms
+   GPU-Only:       13.06 ms
+   2-Way Split:     8.11 ms (Speedup: 37.9%)
+   3-Way Split:    34.22 ms ⚡ (Speedup: -162.0%)
+
+=----------------------------------------------------------------
+✅ All Model Benchmarks Complete!
+
+💾 Swift results saved to: /Users/ommohite/Documents/Programming/FusionML/benchmarks/results/Apple_M1/swift_benchmark.json

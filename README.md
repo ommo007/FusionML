@@ -14,11 +14,11 @@ FusionML delivers PyTorch-like ease of use with a unique advantage: **intelligen
 
 ## Installation
 
-### Swift Package Manager
+### Swift Package Manager (Local)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ommo007/FusionML.git", from: "0.1.0")
+    .package(path: "../FusionML")
 ]
 ```
 

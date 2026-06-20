@@ -162,9 +162,39 @@ public final class GPT2Block: Module {
     }
 }
 
+struct SystemInfo: Codable {
+    var cpu: String
+    var cpu_slug: String
+    var memory: String
+}
+
+struct SwiftBenchmarkPayload: Codable {
+    var benchmark_version: String
+    var system: SystemInfo
+    var results: [String: [String: Double]]
+}
+
+func getSystemInfo() -> (cpu: String, cpuSlug: String, memory: String) {
+    var size = 0
+    sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0)
+    var machine = [CChar](repeating: 0, count: size)
+    sysctlbyname("machdep.cpu.brand_string", &machine, &size, nil, 0)
+    let cpu = String(cString: machine).trimmingCharacters(in: .whitespacesAndNewlines)
+    let cpuSlug = cpu.replacingOccurrences(of: " ", with: "_")
+    
+    var memSize: UInt64 = 0
+    var memSizeSize = MemoryLayout<UInt64>.size
+    sysctlbyname("hw.memsize", &memSize, &memSizeSize, nil, 0)
+    let memory = "\(memSize / (1024 * 1024 * 1024))GB"
+    
+    return (cpu, cpuSlug, memory)
+}
+
 // MARK: - Benchmark Execution
 @main
 struct BenchmarkExample {
+    static var results: [String: [String: Double]] = [:]
+
     static func main() throws {
         print("🔥 FusionML Model Training & Inference Benchmarks")
         print("=" .padding(toLength: 65, withPad: "=", startingAt: 0))
@@ -280,6 +310,19 @@ struct BenchmarkExample {
             IntelligentRouter.shared.enableSplitting = true
             let llamaTrainSmart = try runTrainStep(llama, llamaOpt, llamaInput, llamaY)
             printTable("Llama-3-8B Training Step", llamaTrainCpu, llamaTrainGpu, llamaTrainSmart)
+            
+            results["llama_inference"] = [
+                "cpu_ms": llamaEvalCpu,
+                "gpu_ms": llamaEvalGpu,
+                "smart_ms": llamaEvalSmart,
+                "speedup": min(llamaEvalCpu, llamaEvalGpu) / llamaEvalSmart
+            ]
+            results["llama_training"] = [
+                "cpu_ms": llamaTrainCpu,
+                "gpu_ms": llamaTrainGpu,
+                "smart_ms": llamaTrainSmart,
+                "speedup": min(llamaTrainCpu, llamaTrainGpu) / llamaTrainSmart
+            ]
         }
         
         func runGPT2() throws {
@@ -322,6 +365,19 @@ struct BenchmarkExample {
             IntelligentRouter.shared.enableSplitting = true
             let gpt2TrainSmart = try runTrainStep(gpt2, gpt2Opt, gpt2Input, gpt2Y)
             printTable("GPT-2 XL Training Step", gpt2TrainCpu, gpt2TrainGpu, gpt2TrainSmart)
+            
+            results["gpt2_inference"] = [
+                "cpu_ms": gpt2EvalCpu,
+                "gpu_ms": gpt2EvalGpu,
+                "smart_ms": gpt2EvalSmart,
+                "speedup": min(gpt2EvalCpu, gpt2EvalGpu) / gpt2EvalSmart
+            ]
+            results["gpt2_training"] = [
+                "cpu_ms": gpt2TrainCpu,
+                "gpu_ms": gpt2TrainGpu,
+                "smart_ms": gpt2TrainSmart,
+                "speedup": min(gpt2TrainCpu, gpt2TrainGpu) / gpt2TrainSmart
+            ]
         }
         
         func runMLP() throws {
@@ -368,6 +424,19 @@ struct BenchmarkExample {
             IntelligentRouter.shared.enableSplitting = true
             let mlpTrainSmart = try runTrainStep(mlp, mlpOpt, mlpInput, mlpY)
             printTable("MLP Training Step", mlpTrainCpu, mlpTrainGpu, mlpTrainSmart)
+            
+            results["mlp_inference"] = [
+                "cpu_ms": mlpEvalCpu,
+                "gpu_ms": mlpEvalGpu,
+                "smart_ms": mlpEvalSmart,
+                "speedup": min(mlpEvalCpu, mlpEvalGpu) / mlpEvalSmart
+            ]
+            results["mlp_training"] = [
+                "cpu_ms": mlpTrainCpu,
+                "gpu_ms": mlpTrainGpu,
+                "smart_ms": mlpTrainSmart,
+                "speedup": min(mlpTrainCpu, mlpTrainGpu) / mlpTrainSmart
+            ]
         }
         
         try autoreleasepool {
@@ -428,6 +497,13 @@ struct BenchmarkExample {
             print("   GPU-Only:      \(String(format: "%6.2f", gpuTime)) ms")
             print("   2-Way Split:   \(String(format: "%6.2f", smart2Time)) ms (Speedup: \(String(format: "%.1f", speedup2))%)")
             print("   3-Way Split:   \(String(format: "%6.2f", smart3Time)) ms ⚡ (Speedup: \(String(format: "%.1f", speedup3))%)")
+            
+            results["matmul_\(size)"] = [
+                "cpu_ms": cpuTime,
+                "gpu_ms": gpuTime,
+                "smart2_ms": smart2Time,
+                "smart3_ms": smart3Time
+            ]
         }
         
         try autoreleasepool {
@@ -439,5 +515,32 @@ struct BenchmarkExample {
         
         print("\n" + "=" .padding(toLength: 65, withPad: "-", startingAt: 0))
         print("✅ All Model Benchmarks Complete!")
+        
+        // Save results to JSON for multi-generation recording
+        let sys = getSystemInfo()
+        let payload = SwiftBenchmarkPayload(
+            benchmark_version: "2.0-unified",
+            system: SystemInfo(cpu: sys.cpu, cpu_slug: sys.cpuSlug, memory: sys.memory),
+            results: results
+        )
+        
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(payload)
+            
+            let currentDir = FileManager.default.currentDirectoryPath
+            let outDirURL = URL(fileURLWithPath: currentDir)
+                .appendingPathComponent("benchmarks")
+                .appendingPathComponent("results")
+                .appendingPathComponent(sys.cpuSlug)
+            
+            try FileManager.default.createDirectory(at: outDirURL, withIntermediateDirectories: true, attributes: nil)
+            let outURL = outDirURL.appendingPathComponent("swift_benchmark.json")
+            try data.write(to: outURL)
+            print("\n💾 Swift results saved to: \(outURL.path)")
+        } catch {
+            print("\n⚠️ Could not save Swift results: \(error)")
+        }
     }
 }

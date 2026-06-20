@@ -4,14 +4,11 @@ Thank you for your interest in contributing to FusionML!
 
 ## Getting Started
 
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/yourusername/FusionML.git`
-3. Create a branch: `git checkout -b feature/my-feature`
-4. Make your changes
-5. Run tests: `swift test`
-6. Commit: `git commit -m "Add my feature"`
-7. Push: `git push origin feature/my-feature`
-8. Open a Pull Request
+1. Copy the repository locally
+2. Create a branch: `git checkout -b feature/my-feature`
+3. Make your changes
+4. Run tests: `swift test`
+5. Commit: `git commit -m "Add my feature"`
 
 ## Development Setup
 
@@ -48,4 +45,4 @@ When reporting issues, please include:
 
 ## Questions?
 
-Open a GitHub Discussion or Issue.
+Reach out to the maintainers directly.

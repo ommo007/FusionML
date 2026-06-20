@@ -3,7 +3,10 @@ Functional operations - stateless functions (GPU-compatible)
 """
 
 import numpy as np
-from ..tensor import Tensor, relu as tensor_relu, sigmoid as tensor_sigmoid, softmax as tensor_softmax, log_softmax as tensor_log_softmax
+from ..tensor import (Tensor, relu as tensor_relu, sigmoid as tensor_sigmoid, 
+                      softmax as tensor_softmax, log_softmax as tensor_log_softmax,
+                      silu as tensor_silu, gelu as tensor_gelu,
+                      layer_norm as tensor_layer_norm)
 
 try:
     import mlx.core as mx
@@ -18,21 +21,18 @@ def relu(x: Tensor) -> Tensor:
 
 
 def gelu(x: Tensor) -> Tensor:
-    """GELU activation"""
-    if x._on_gpu and HAS_MLX:
-        result = Tensor.__new__(Tensor)
-        x_mlx = x._mlx
-        result._mlx = 0.5 * x_mlx * (1 + mx.tanh(np.sqrt(2/np.pi) * (x_mlx + 0.044715 * x_mlx ** 3)))
-        result._np = None
-        result._on_gpu = True
-        result.requires_grad = x.requires_grad
-        result._ctx = None
-        result.grad = None
-        return result
-    else:
-        data = x.numpy
-        result_data = 0.5 * data * (1 + np.tanh(np.sqrt(2/np.pi) * (data + 0.044715 * data**3)))
-        return Tensor(result_data.astype(np.float32), requires_grad=x.requires_grad)
+    """GELU activation (GPU-native)"""
+    return tensor_gelu(x)
+
+
+def silu(x: Tensor) -> Tensor:
+    """SiLU (Swish) activation: x * sigmoid(x) (GPU-native)"""
+    return tensor_silu(x)
+
+
+def layer_norm(x: Tensor, gamma: Tensor, beta: Tensor, eps: float = 1e-5) -> Tensor:
+    """Layer normalization (GPU-native)"""
+    return tensor_layer_norm(x, gamma, beta, eps)
 
 
 def sigmoid(x: Tensor) -> Tensor:

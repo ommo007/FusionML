@@ -4,7 +4,7 @@ Neural Network Module - Base class and layers (GPU-compatible)
 
 from typing import List, Iterator, Tuple
 import numpy as np
-from ..tensor import Tensor, relu as tensor_relu, sigmoid as tensor_sigmoid
+from ..tensor import Tensor, relu as tensor_relu, sigmoid as tensor_sigmoid, silu as tensor_silu, gelu as tensor_gelu, layer_norm as tensor_layer_norm
 
 try:
     import mlx.core as mx
@@ -30,9 +30,12 @@ class Module:
     def parameters(self) -> Iterator[Tensor]:
         """Get all parameters"""
         for param in self._parameters.values():
+            param.is_parameter = True
             yield param
         for module in self._modules.values():
-            yield from module.parameters()
+            for param in module.parameters():
+                param.is_parameter = True
+                yield param
     
     def named_parameters(self) -> Iterator[Tuple[str, Tensor]]:
         """Get named parameters"""
@@ -74,6 +77,7 @@ class Linear(Module):
             np.random.uniform(-k, k, (in_features, out_features)).astype(np.float32),
             requires_grad=True
         )
+        self.weight.is_parameter = True
         self._parameters['weight'] = self.weight
         
         if bias:
@@ -81,6 +85,7 @@ class Linear(Module):
                 np.zeros((1, out_features), dtype=np.float32),
                 requires_grad=True
             )
+            self.bias.is_parameter = True
             self._parameters['bias'] = self.bias
         else:
             self.bias = None
@@ -97,6 +102,13 @@ class ReLU(Module):
     
     def forward(self, x: Tensor) -> Tensor:
         return tensor_relu(x)
+
+
+class SiLU(Module):
+    """SiLU (Swish) activation: x * sigmoid(x)"""
+    
+    def forward(self, x: Tensor) -> Tensor:
+        return tensor_silu(x)
 
 
 class GELU(Module):
@@ -183,3 +195,27 @@ class Sequential(Module):
         for module in self._modules.values():
             x = module(x)
         return x
+
+
+class LayerNorm(Module):
+    """Layer normalization over last dimension — GPU-native"""
+    
+    def __init__(self, normalized_shape: int, eps: float = 1e-5):
+        super().__init__()
+        self.normalized_shape = normalized_shape
+        self.eps = eps
+        self.gamma = Tensor(
+            np.ones(normalized_shape, dtype=np.float32),
+            requires_grad=True
+        )
+        self.gamma.is_parameter = True
+        self.beta = Tensor(
+            np.zeros(normalized_shape, dtype=np.float32),
+            requires_grad=True
+        )
+        self.beta.is_parameter = True
+        self._parameters['gamma'] = self.gamma
+        self._parameters['beta'] = self.beta
+    
+    def forward(self, x: Tensor) -> Tensor:
+        return tensor_layer_norm(x, self.gamma, self.beta, self.eps)

@@ -564,8 +564,7 @@ def run_all(output_dir=None, verbose=True):
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         cpu = sysinfo.get("cpu", "Unknown").replace(" ", "_")
-        ram = sysinfo.get("ram_gb", 0)
-        ddir = os.path.join(output_dir, f"{cpu}_{ram}GB")
+        ddir = os.path.join(output_dir, cpu)
         os.makedirs(ddir, exist_ok=True)
         
         path = os.path.join(ddir, "head_to_head_v2.json")

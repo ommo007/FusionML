@@ -5,7 +5,7 @@ GPU + CPU parallel execution for optimal performance
 
 __version__ = "0.2.0"
 
-from .tensor import Tensor, zeros, ones, rand, randn, eye
+from .tensor import Tensor, zeros, ones, rand, randn, eye, silu, gelu, layer_norm
 from . import nn
 from . import optim
 from . import autograd
