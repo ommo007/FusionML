@@ -84,3 +84,18 @@ pip-delete-this-directory.txt
 *.bak
 tmp/
 temp/
+
+# Snapdragon Benchmarking and Build files
+benchmarks/snapdragon/ndk/
+benchmarks/snapdragon/tflite_build/
+benchmarks/snapdragon/tensorflow/
+benchmarks/snapdragon/models/
+benchmarks/snapdragon/official_tool/
+benchmarks/snapdragon/aar_headers/
+benchmarks/snapdragon/apk/
+benchmarks/snapdragon/flatbuffers/
+benchmarks/snapdragon/prebuilt_tflite/
+benchmarks/snapdragon/v2.16/
+benchmarks/snapdragon/physical_results.json
+benchmarks/snapdragon/extract_results*.py
+resnet_nnapi_log.txt
