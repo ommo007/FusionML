@@ -10,6 +10,8 @@ on:
 jobs:
   release:
     runs-on: macos-latest
+    permissions:
+      contents: write  # Required for creating GitHub releases
     
     steps:
       - uses: actions/checkout@v4
@@ -34,22 +36,7 @@ jobs:
               repo: context.repo.repo,
               tag_name: `v${version}`,
               name: `FusionML v${version}`,
-              body: `## FusionML v${version}
-
-### Swift Package Manager
-Add to your \`Package.swift\`:
-\`\`\`swift
-dependencies: [
-    .package(url: "https://github.com/ommo007/FusionML.git", from: "${version}")
-]
-\`\`\`
-
-### Python
-\`\`\`bash
-pip install fusionml==${version}
-\`\`\`
-
-See [CHANGELOG.md](CHANGELOG.md) for details.`,
+              body: `## FusionML v${version}\n\n### Swift Package Manager\nAdd to your \`Package.swift\`:\n\`\`\`swift\ndependencies: [\n    .package(url: "https://github.com/ommo007/FusionML.git", from: "${version}")\n]\n\`\`\`\n\n### Python\n\`\`\`bash\npip install fusionml==${version}\n\`\`\`\n\nSee [CHANGELOG.md](CHANGELOG.md) for details.`,
               draft: false,
               prerelease: version.includes('alpha') || version.includes('beta')
             });

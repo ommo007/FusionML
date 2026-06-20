@@ -7,13 +7,13 @@ on:
     branches: [main]
     paths:
       - 'python/**'
-      - 'Sources/**'
+      - 'sources/**'
       - 'Package.swift'
   pull_request:
     branches: [main]
     paths:
       - 'python/**'
-      - 'Sources/**'
+      - 'sources/**'
       - 'Package.swift'
   schedule:
     - cron: '0 0 * * 0'  # Weekly on Sunday

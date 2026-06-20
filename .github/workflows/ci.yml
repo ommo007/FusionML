@@ -7,16 +7,16 @@ on:
     branches: [main]
     paths:
       - 'python/**'
-      - 'Sources/**'
-      - 'Tests/**'
+      - 'sources/**'
+      - 'tests/**'
       - 'Package.swift'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
     paths:
       - 'python/**'
-      - 'Sources/**'
-      - 'Tests/**'
+      - 'sources/**'
+      - 'tests/**'
       - 'Package.swift'
       - '.github/workflows/ci.yml'
 
