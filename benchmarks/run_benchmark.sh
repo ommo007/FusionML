@@ -151,7 +151,7 @@ setup_environment() {
 run_cross_framework() {
     echo -e "${BOLD}${MAGENTA}▶ Running Cross-Framework Model Comparison (Llama-3 & GPT-2 Blocks)...${NC}"
     cd "$PYTHON_DIR"
-    python model_comparison.py --framework all
+    python model_comparison.py
 }
 
 run_head_to_head() {
