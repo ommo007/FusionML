@@ -84,3 +84,7 @@ pip-delete-this-directory.txt
 *.bak
 tmp/
 temp/
+
+# Ignore benchmarks folder on main branch
+benchmarks/
+resnet_nnapi_log.txt
