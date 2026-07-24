@@ -233,7 +233,7 @@ API-level consideration for any unified-memory array framework.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{figures/fig_arch_canva.png}
+\includegraphics[width=\columnwidth]{figures/fig_arch_canva.pdf}
 \caption{\sys{} per-layer prefill split. Every linear layer is row-split
 across concurrent CPU/GPU streams behind an eager boundary; attention,
 normalization, and element-wise math stay on the GPU. The CPU share $\rho$
