@@ -53,8 +53,11 @@ Target plan (decided 2026-07-24):
    Confirm: exact deadline, page limit (historically 10 pages + refs),
    template (`mlsys2027.sty`, ICML-derived two-column), review platform
    (CMT or OpenReview — link will be in CFP).
-2. Port: section bodies from main.tex move unchanged into the template;
-   two-column will need figure-width passes (`\linewidth` already used).
+2. ~~Port to template~~ DONE — main.tex is already in official MLSys format
+   (mlsys2026.sty, 6 pages of the 10 allowed, incl. architecture + timeline
+   TikZ figures). When mlsys2027.sty posts: rename the \usepackage and .bst
+   references (historically a year bump). Blind version = remove the
+   `[accepted]` option from `\usepackage[accepted]{mlsys2026}`.
 3. **Anonymize (double-blind)**:
    - Remove author block.
    - Replace github.com/ommo007/FusionML with an **anonymous mirror**
