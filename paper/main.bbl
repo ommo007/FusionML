@@ -1,4 +1,4 @@
-\begin{thebibliography}{7}
+\begin{thebibliography}{9}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -23,6 +23,10 @@ Dao, T., Fu, D.~Y., Ermon, S., Rudra, A., and R{\'e}, C.
   {IO}-awareness.
 \newblock In \emph{Advances in Neural Information Processing Systems
   (NeurIPS)}, 2022.
+
+\bibitem[Grattafiori et~al.(2024)Grattafiori, Dubey, et~al.]{llama3}
+Grattafiori, A., Dubey, A., et~al.
+\newblock The llama 3 herd of models, 2024.
 
 \bibitem[Hannun et~al.(2023)Hannun, Digani, Katharopoulos, and
   Collobert]{mlx2023}
@@ -50,5 +54,9 @@ Patel, P., Choukse, E., Zhang, C., Shah, A., Goiri, {\'I}., Maleki, S., and
   splitting.
 \newblock In \emph{ACM/IEEE 51st Annual International Symposium on Computer
   Architecture (ISCA)}, 2024.
+
+\bibitem[{Qwen Team}(2024)]{qwen2024}
+{Qwen Team}.
+\newblock Qwen2.5 technical report, 2024.
 
 \end{thebibliography}

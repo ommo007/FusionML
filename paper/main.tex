@@ -295,7 +295,7 @@ through 32 blocks).
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.78\textwidth]{figures/fig_fivechip.pdf}
-\caption{Llama-3-8B-geometry decoder-block prefill: per-layer split speedup
+\caption{Llama-3-8B-geometry~\citep{llama3} decoder-block prefill: per-layer split speedup
 over precision-matched MLX-FP16, five chips, sequence length 1024--8192.
 Every actively-cooled chip wins at every length; the fanless 8\,GB M1 fades
 at 8192 under memory pressure and thermal throttling.}
@@ -344,7 +344,7 @@ decode throughput unchanged (7.1$\rightarrow$7.1 tok/s on M4,
 
 We patch MLX-LM's \texttt{nn.Linear} so that large-row (prefill) calls use
 the split and decode calls (single-row) fall through untouched, and serve
-Qwen2.5-7B-Instruct-bf16 with greedy decoding. TTFT improves
+Qwen2.5-7B-Instruct-bf16~\citep{qwen2024} with greedy decoding. TTFT improves
 \x{1.18}--\x{1.25} across 2k/4k/8k-token prompts on both 24\,GB machines
 (Figure~\ref{fig:ttft}); decode throughput is exactly neutral, as designed.
 Outputs are token-identical to stock in 5 of 6 configurations; in the
