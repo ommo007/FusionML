@@ -74,6 +74,41 @@ vs 0.32.0 both compute this workload finitely on both chips, and the ANE
 crash conditions are absent on the mini's stack (macOS 26.3, same
 coremltools 9.0 — repros run clean there, segfault on macOS 25.5).
 
+## FIVE-CHIP SUMMARY (2026-07-14) — community replication complete
+
+Llama-block split vs adjacent MLX-FP16 (seq 1024/2048/4096/8192):
+
+| Chip | Cooling/RAM | Split speedups | Training vs FP16 |
+|---|---|---|---|
+| M1 | passive, 8GB | 1.18 / 1.08 / 1.06-1.13 / 0.97 | 0.97 / 0.86 |
+| M2 | active, 8GB | **1.23 / 1.30 / 1.31 / 1.19** | 0.96 / 0.88 |
+| M3 Pro | active, 18GB | 1.16 / 1.16 / 1.17 / 1.15 | 0.93 / 0.86 |
+| M4 | active, 24GB | 1.15 / 1.17 / 1.22-1.25 / 1.17-1.19 | 0.95 / 0.91 |
+| M4 Pro | active, 24GB | 1.30 / **1.38** / 1.27 / 1.19 | 0.96 / 0.92 |
+
+- **Consistent 1.15–1.38× Llama-shape prefill wins on every actively-cooled
+  chip across three generations.** GPT-2 (small shapes) wins are smaller and
+  vanish on 8GB machines at seq 1024 — known small-shape sensitivity.
+- **Trend-prediction outcome (report honestly):** the simple "win grows with
+  CPU:GPU core ratio" prediction PARTIALLY failed — M2 (8C/8G) outperforms
+  M4 (10C/10G) and M3 Pro (11C/14G) sits lowest of the actively-cooled set.
+  Magnitude is chip-dependent (bandwidth, core mix); the robust claim is
+  consistency of the win, not a single-variable law.
+- **Training negative is now FIVE-chip universal:** 0.86–0.97× vs MLX-FP16
+  everywhere, losses finite everywhere. Strongest honest-negative in the paper.
+- M3 Pro dynamic-gate cells at 2048 (0.80×) and 4096 (1.81×) are mutually
+  inconsistent outliers — flag for one re-run; do not cite either.
+- **M4 Pro TTFT via mlx-lm: 1.219× / 1.228× / 1.220×** (2k/4k/8k), decode
+  neutral (13.4→13.5 tok/s). Output token-identical at 2k and 8k; the 4k run
+  diverged at a near-tie token after 289 identical characters ("Student:" vs
+  "Student feedback:") — FP16 reduction-order sensitivity, both completions
+  coherent. Disclose as: bit-identical in 5 of 6 real-model configs.
+- **M4 Pro full-depth run INVALIDATED — machine was swapping:** 15.6GB model
+  but peak RSS 1.8GB, baseline 5.5× slower than the M4 mini's, timings
+  non-monotonic in seq. Excluded entirely; needs re-run after reboot with
+  free RAM ≥17GB (the benchmark now refuses to run otherwise, and all
+  result JSONs now record `free_ram_gb`).
+
 ## THE HEADLINE (2026-07-13): real-model, real-runner, end-to-end
 
 **Up to 1.25× faster time-to-first-token on a real 7B checkpoint

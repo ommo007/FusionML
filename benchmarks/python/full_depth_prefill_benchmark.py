@@ -211,6 +211,12 @@ def main():
         sys.exit(1)
 
     from bench_hw import get_system_info, get_power_state
+    free_gb = get_power_state().get("free_ram_gb")
+    if free_gb is not None and free_gb < 17.0:
+        print(f"✗ Only {free_gb}GB RAM free — the 15.6GB model would swap and every "
+              f"number would be garbage (this exact failure invalidated a prior run). "
+              f"Reboot or quit other apps, then re-run.")
+        sys.exit(1)
     slug = get_system_info()["cpu_slug"]
     out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../results", slug))
     os.makedirs(out_dir, exist_ok=True)

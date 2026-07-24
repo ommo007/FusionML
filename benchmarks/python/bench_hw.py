@@ -101,4 +101,23 @@ def get_power_state():
         env["thermal_notes"] = therm.strip()
     except Exception:
         pass
+    # Free RAM at run start — a benchmark whose working set exceeds this is
+    # measuring swap, not compute (see the invalidated M4 Pro full-depth run:
+    # 15.6GB model, 1.8GB resident, 5.5x-slow nonsense timings).
+    try:
+        vm = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout
+        import re as _re
+        page_size = 16384
+        m = _re.search(r"page size of (\d+)", vm)
+        if m:
+            page_size = int(m.group(1))
+        pages = {}
+        for key in ["Pages free", "Pages inactive", "Pages speculative"]:
+            m = _re.search(rf"{key}:\s+(\d+)", vm)
+            if m:
+                pages[key] = int(m.group(1))
+        if pages:
+            env["free_ram_gb"] = round(sum(pages.values()) * page_size / (1024 ** 3), 2)
+    except Exception:
+        pass
     return env
