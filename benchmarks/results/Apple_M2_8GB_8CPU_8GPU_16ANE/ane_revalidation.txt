@@ -1,0 +1,58 @@
+=== ane_spike_test.py (dispatch overhead vs GPU) ===
+======================================================================
+  ANE Viability Spike Test
+  Real CoreML/ANE execution vs CPU (Accelerate) vs GPU (MLX)
+======================================================================
+
+▶ ane_chunk_gpt2_ffn: [154x1600] @ [1600x6400]
+  First call (incl. compile): 674.3 ms
+  ANE steady-state:  median=24.937 ms  std=4.617 ms
+  CPU (Accelerate):  median=12.475 ms
+  GPU (MLX):         median=2.891 ms
+  Correctness: max_abs_err=1.35e-03  rel_err=1.60e-02
+  ANE/GPU ratio: 8.63x (ANE slower)
+  ANE/CPU ratio: 2.00x (ANE slower)
+
+▶ cpu_chunk_gpt2_ffn: [256x1600] @ [1600x6400]
+  First call (incl. compile): 535.2 ms
+  ANE steady-state:  median=26.015 ms  std=3.605 ms
+  CPU (Accelerate):  median=18.568 ms
+  GPU (MLX):         median=2.427 ms
+  Correctness: max_abs_err=1.19e-03  rel_err=1.49e-02
+  ANE/GPU ratio: 10.72x (ANE slower)
+  ANE/CPU ratio: 1.40x (ANE slower)
+
+▶ full_gpt2_ffn: [1024x1600] @ [1600x6400]
+  First call (incl. compile): 579.1 ms
+  ANE steady-state:  median=29.820 ms  std=7.039 ms
+  CPU (Accelerate):  median=63.304 ms
+  GPU (MLX):         median=9.637 ms
+  Correctness: max_abs_err=1.26e-03  rel_err=1.44e-02
+  ANE/GPU ratio: 3.09x (ANE slower)
+  ANE/CPU ratio: 0.47x (ANE faster)
+
+======================================================================
+  VERDICT
+======================================================================
+  ANE is SLOWER than GPU for every tested shape, even at steady-state
+  (model compiled and cached). Adding ANE to the model-level scheduler
+  would not help for these matmul sizes on this hardware.
+
+Saved to /Users/gg1313/Desktop/Applied Projects/FusionML/benchmarks/python/../results/Apple_M2_8GB_8CPU_8GPU_16ANE/ane_spike_test.json
+
+=== ane_mlx_minimal_repro.py (second-shape segfault repro) ===
+Torch version 2.13.0 has not been tested with coremltools. You may run into unexpected errors. Torch 2.7.0 is the most recent version that has been tested.
+Step: calling ane_matmul directly (main thread, no concurrency)...
+Step: ane_matmul returned successfully.
+SUCCESS: reached end of script without crashing.
+
+=== ane_multi_tier_repro.py (multi-tier segfault repro) ===
+Torch version 2.13.0 has not been tested with coremltools. You may run into unexpected errors. Torch 2.7.0 is the most recent version that has been tested.
+MLX GPU touch done.
+Loading tier 2373...
+Tier 2373 done, output shape (2373, 6400)
+Loading tier 1566...
+Tier 1566 done, output shape (1566, 6400)
+Loading tier 783...
+Tier 783 done, output shape (783, 6400)
+SUCCESS: all tiers loaded sequentially without crashing.

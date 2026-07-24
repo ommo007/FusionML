@@ -1,0 +1,85 @@
+{
+  "warmups": 10,
+  "runs": 50,
+  "environment": {
+    "cpu": "Apple M2",
+    "memory": "8GB",
+    "cpu_cores": "8",
+    "gpu_cores": "8",
+    "ane_cores": "16",
+    "model_id": "Mac14,2",
+    "passively_cooled": false,
+    "cpu_slug": "Apple_M2_8GB_8CPU_8GPU_16ANE",
+    "power_source": "AC",
+    "battery_pct": "100%",
+    "thermal_notes": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+  },
+  "results": {
+    "llama": {
+      "mlx_fp32": {
+        "mean": 729.7979950399895,
+        "std": 3.3060123572686098,
+        "median": 729.9735835022148,
+        "ci95": 0.9163798725523735,
+        "n_runs": 50,
+        "peak_mem_mb": 1985.3125,
+        "final_loss": -0.0037821833975613117,
+        "loss_finite": true
+      },
+      "mlx_fp16": {
+        "mean": 600.1404508997803,
+        "std": 36.97080264487097,
+        "median": 593.07437499956,
+        "ci95": 10.247783660390342,
+        "n_runs": 50,
+        "peak_mem_mb": 1981.890625,
+        "final_loss": -0.0037746429443359375,
+        "loss_finite": true
+      },
+      "fusionml": {
+        "mean": 617.1491975198296,
+        "std": 0.5160563262480568,
+        "median": 617.1623539994471,
+        "min": 615.9640420009964,
+        "max": 618.464708000829,
+        "ci95": 0.14304351568357354,
+        "n_runs": 50,
+        "peak_mem_mb": 2706.234375,
+        "tokens_per_sec": 1659.2422126046722
+      }
+    },
+    "gpt2": {
+      "mlx_fp32": {
+        "mean": 112.10471245984081,
+        "std": 1.3106769498740665,
+        "median": 111.20420850056689,
+        "ci95": 0.36330111520673436,
+        "n_runs": 50,
+        "peak_mem_mb": 634.5,
+        "final_loss": 0.008275754749774933,
+        "loss_finite": true
+      },
+      "mlx_fp16": {
+        "mean": 89.02549082034966,
+        "std": 0.10188745554799067,
+        "median": 89.028104001045,
+        "ci95": 0.028241761808444232,
+        "n_runs": 50,
+        "peak_mem_mb": 638.609375,
+        "final_loss": 0.00807952880859375,
+        "loss_finite": true
+      },
+      "fusionml": {
+        "mean": 100.95310742006404,
+        "std": 0.18130145661088176,
+        "median": 100.93241699905775,
+        "min": 100.66004200052703,
+        "max": 101.6463339983602,
+        "ci95": 0.05025419984815282,
+        "n_runs": 50,
+        "peak_mem_mb": 763.53125,
+        "tokens_per_sec": 10143.323233619294
+      }
+    }
+  }
+}
