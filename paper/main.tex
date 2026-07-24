@@ -49,7 +49,7 @@
 \begin{document}
 
 \twocolumn[
-\mlsystitle{\sys{}: Prefill, Not Decode: Mechanism and Boundaries of
+\mlsystitle{\sys{}: Prefill, Not Decode - Mechanism and Boundaries of
 CPU+GPU Co-Execution on Unified-Memory Apple Silicon}
 
 \centerline{\large\bf Om Mohite}
@@ -233,49 +233,7 @@ API-level consideration for any unified-memory array framework.
 
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[font=\scriptsize, node distance=2.5mm,
-  box/.style={draw, rounded corners=1pt, minimum height=4.4mm, inner sep=2pt},
-  gpu/.style={box, fill=oiblue!22},
-  split/.style={box, fill=oiorange!30},
-  flow/.style={-{Stealth[length=1.6mm]}}]
-% top row: block pipeline
-\node[gpu] (ln1) {LN};
-\node[split, right=of ln1] (qkv) {$W_{q,k,v}$};
-\node[gpu, right=of qkv] (attn) {attention};
-\node[split, right=of attn] (wo) {$W_o$};
-\node[gpu, right=of wo] (ln2) {LN};
-\node[split, right=of ln2] (ffn) {$W_{g,u,d}$};
-\draw[flow] (ln1) -- (qkv);
-\draw[flow] (qkv) -- (attn);
-\draw[flow] (attn) -- (wo);
-\draw[flow] (wo) -- (ln2);
-\draw[flow] (ln2) -- (ffn);
-% legend
-\node[gpu, below=5.5mm of ln1.south west, anchor=west, xshift=0mm] (lg) {\ \ };
-\node[right=1mm of lg] (lgt) {GPU-only};
-\node[split, right=2.5mm of lgt] (ls) {\ \ };
-\node[right=1mm of ls] {row-split (CPU$\|$GPU), eager boundary before each};
-% magnified split linear (shifted well clear of the legend row above it)
-\begin{scope}[shift={(1.1,-2.85)}]
-\draw[decorate,decoration={brace,mirror,amplitude=3pt}]
-  (2.05,1.62) -- (0.6,1.62);
-\node at (1.3,1.25) {one split linear};
-\draw (0,0) rectangle (0.9,0.9);
-\draw[fill=oiorange!30] (0,0.62) rectangle (0.9,0.9);
-\node at (0.45,0.76) {$\rho M$};
-\node at (0.45,0.3) {$(1{-}\rho)M$};
-\node[below=0.5mm of {(0.45,0)}] {input rows};
-\node[box, fill=oiorange!30] (cpu) at (2.6,0.76) {CPU stream (AMX)};
-\node[box, fill=oiblue!22]  (gpub) at (2.6,0.18) {GPU stream (Metal)};
-\node[box] (cat) at (4.6,0.47) {concat};
-\draw[flow] (0.9,0.76) -- (cpu);
-\draw[flow] (0.9,0.18) -- (gpub);
-\draw[flow] (cpu) -- (cat);
-\draw[flow] (gpub) -- (cat);
-\draw[very thick, oiverm] (1.15,-0.15) -- (1.15,1.0);
-\node[oiverm, anchor=west] at (0.75,-0.38) {\texttt{mx.eval}};
-\end{scope}
-\end{tikzpicture}
+\includegraphics[width=\columnwidth]{figures/fig_arch_canva.png}
 \caption{\sys{} per-layer prefill split. Every linear layer is row-split
 across concurrent CPU/GPU streams behind an eager boundary; attention,
 normalization, and element-wise math stay on the GPU. The CPU share $\rho$
