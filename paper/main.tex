@@ -1,0 +1,388 @@
+\documentclass[11pt]{article}
+% arXiv draft format. For the MLSys 2027 submission, port section bodies
+% unchanged into the official MLSys template (mlsys2027.sty, double-blind:
+% strip author block and de-anonymize repo links). See SUBMISSION_CHECKLIST.md.
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage{microtype}
+
+\newcommand{\sys}{FusionML}
+\newcommand{\x}[1]{$#1\times$}
+
+\title{Prefill, Not Decode: Mechanism and Boundaries of CPU+GPU
+Co-Execution on Unified-Memory Apple Silicon}
+
+\author{Om Mohite\\
+Vishwakarma Institute of Technology\thanks{Draft for arXiv; affiliation and
+acknowledgments to be finalized. Code, all raw result JSONs (with embedded
+power/thermal state), and verbatim generation transcripts:
+\url{https://github.com/ommo007/FusionML}.}}
+
+\date{August 2026 (draft)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Apple-Silicon SoCs place CPU, GPU, and Neural Engine on one unified memory
+system, inviting the question of whether transformer inference can be
+accelerated by executing single operators cooperatively across units. Prior
+attempts (including our own) failed or produced precision-confounded wins.
+We identify the mechanism behind these failures: MLX, the platform's lazy-graph
+array framework, \emph{serializes} cross-stream work whenever a CPU-stream
+operation consumes an unmaterialized GPU result inside one evaluation graph
+--- a row-split matmul that runs \x{1.38} faster with materialized inputs runs
+\x{0.66} (slower than GPU-only) inside a lazy graph. Inserting an eager
+materialization boundary before each split restores true concurrency
+(\x{1.34}). Building on this, we implement per-layer, contention-aware CPU+GPU
+row splitting for transformer prefill and evaluate it under a strict fairness
+protocol (precision-matched FP16 baselines, adjacently measured, with power and
+thermal state recorded in every result). Across five chips spanning three
+Apple-Silicon generations, community-replicated, the split accelerates
+Llama-shaped decoder-block prefill by \x{1.15}--\x{1.38}; the win is unchanged
+at full 32-block model depth (15.6\,GB), and reaches end-to-end reality as
+\x{1.18}--\x{1.25} faster time-to-first-token for a real Qwen2.5-7B checkpoint
+served through stock MLX-LM, with token-identical outputs in 5 of 6
+configurations and unchanged decode throughput. We characterize the
+boundaries with equal care: decode cannot benefit (it is bound by the
+\emph{shared} memory bandwidth co-execution does not add); single-block
+training loses \x{0.86}--\x{0.97} on all five chips once the baseline is
+precision-matched; Neural-Engine dispatch overhead ($\sim$20\,ms via CoreML)
+excludes it at layer granularity; and a runtime probing gate that guarantees
+no regression in-regime becomes \emph{destructively self-deceiving} under
+memory pressure, where probing an alternative execution mode evicts the
+active mode's working set and biases its own measurement. We release all
+code, raw results, and transcripts.
+\end{abstract}
+
+\section{Introduction}
+
+Unified-memory SoCs are now the dominant local-inference platform, and Apple
+Silicon is their most widely deployed instance. Because CPU, GPU, and Neural
+Engine (ANE) address the same physical memory, work can in principle be split
+\emph{within} a single operator --- rows of one matmul computed simultaneously
+on CPU and GPU --- without any copy. Whether this helps in practice has
+remained unclear: published speedups in this space are frequently confounded
+(FP16 systems compared against FP32 baselines), and naive implementations
+lose outright.
+
+This paper reports what we believe is the first mechanism-level account of
+when intra-operator CPU+GPU co-execution helps transformer inference on this
+platform, verified end-to-end and replicated by community contributors on
+five chips. Our contributions:
+
+\begin{enumerate}
+\item \textbf{Mechanism.} We show that lazy-graph evaluation is the hidden
+serializer: MLX runs CPU-stream and GPU-stream work concurrently only when
+the CPU operation's inputs are already materialized. A minimal probe
+(Section~\ref{sec:mechanism}) makes the effect quantitative
+(\x{1.38}~ready~/ \x{0.66}~lazy~/ \x{1.34}~eager-boundary) and explains a
+history of failed co-execution attempts, including why an eager per-layer
+Swift implementation succeeded where lazy Python graphs failed.
+\item \textbf{Design.} A per-layer row-split for prefill with (i) eager
+materialization boundaries, (ii) per-shape ratios calibrated \emph{under
+contention} rather than from solo-unit rates, and (iii) a runtime gate
+(probation + periodic re-probing + hysteresis) that holds a no-regression
+floor by construction, since the baseline execution mode is itself one of
+the gate's arms (Section~\ref{sec:design}).
+\item \textbf{Fair, replicated evaluation.} Under a strict protocol
+(Section~\ref{sec:setup}): \x{1.15}--\x{1.38} Llama-shape prefill wins on all
+five actively-cooled-or-not chips tested (M1, M2, M3~Pro, M4, M4~Pro);
+unchanged at full 32-block depth; \x{1.18}--\x{1.25} TTFT on a real 7B
+checkpoint through stock MLX-LM with token-identical outputs and neutral
+decode (Section~\ref{sec:eval}).
+\item \textbf{Boundaries, measured.} Decode is provably out of scope on
+shared bandwidth; precision-matched training loses on every chip; ANE
+dispatch overhead and three (since OS-fixed) crash conditions exclude the
+Neural Engine at layer granularity; and we quantify an \emph{observer
+effect}: under memory pressure, a probing scheduler's measurements of
+alternative modes are biased $\sim$\x{1.4} by the probe's own working-set
+eviction, with $\sim$\x{1.7} reload cost on the next call
+(Section~\ref{sec:boundaries}).
+\end{enumerate}
+
+We highlight a methodological stance: every headline number in this paper is
+measured against a \emph{precision-matched} baseline executed adjacently on
+the same machine, and several of our own earlier ``wins'' are retired in
+Section~\ref{sec:boundaries} as FP16-vs-FP32 artifacts. Raw result files ---
+including power source, battery level, thermal notes, and free memory at run
+start --- accompany every experiment in the repository.
+
+\section{Background and Related Work}
+
+\textbf{Apple Silicon and MLX.} Apple's M-series SoCs share one LPDDR memory
+system across CPU (with AMX matrix units reachable via Accelerate), GPU
+(Metal), and ANE (reachable only through CoreML). MLX~\cite{mlx2023} is
+Apple's array framework for this platform: lazily evaluated, with a
+\texttt{stream} abstraction that places operations on CPU or GPU. MLX-LM is
+its de-facto LLM serving layer, our end-to-end baseline.
+
+\textbf{Heterogeneous mobile inference.} CoDL~\cite{codl2022} co-executes CNN
+operators across CPU and GPU on smartphones and reports the same class of
+contention effects we measure (shared-bandwidth degradation of per-unit
+throughput); we extend the contention-aware view to LLM prefill on Apple
+Silicon and add the lazy-graph serialization mechanism, which has no analogue
+in eager mobile stacks. Phase-splitting systems such as
+Splitwise~\cite{splitwise2024} and chunked-prefill schedulers such as
+Sarathi~\cite{sarathi2023} exploit the prefill/decode asymmetry at cluster
+scale; we exploit the same asymmetry \emph{within one SoC}.
+
+\textbf{Kernel- and block-level acceleration.} FlashAttention~\cite{dao2022}
+and successors accelerate attention itself; our split leaves attention on the
+GPU untouched and is complementary. Speculative
+decoding~\cite{leviathan2023,chen2023} accelerates decode with a draft model;
+we argue in Section~\ref{sec:boundaries} that a CPU/ANE-hosted draft is the
+natural way to use idle units during decode, precisely because intra-operator
+splitting cannot help there.
+
+\section{The Serialization Mechanism}
+\label{sec:mechanism}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.55\linewidth]{figures/fig_mechanism.pdf}
+\caption{The mechanism probe ($2048{\times}1600 \times 1600{\times}6400$
+FP16 matmul, 35\% of rows on the CPU stream, M1). The identical split wins
+\x{1.38} when its input is materialized, \emph{loses} \x{0.66} when the input
+is an unmaterialized GPU result inside the same lazy graph, and wins again
+(\x{1.34}) when an eager \texttt{mx.eval} boundary materializes the input
+first.}
+\label{fig:mechanism}
+\end{figure}
+
+Row-splitting one matmul across \texttt{mx.cpu} and \texttt{mx.gpu} streams
+is straightforward; making it concurrent is not.
+Figure~\ref{fig:mechanism} shows the probe that isolates the effect. When
+both stream branches read an already-materialized array, MLX executes them
+concurrently and the split delivers the expected win. When the same split
+consumes the output of a GPU operation \emph{within the same evaluation
+graph} --- the situation of every layer after the first in any real network
+--- execution serializes and the split is strictly worse than doing nothing.
+An explicit materialization boundary (\texttt{mx.eval} on the input) before
+the split restores concurrency at negligible cost.
+
+This single scheduling property explains a striking prior split within our
+own project: an eager, per-layer Swift implementation showed consistent
+co-execution wins while every lazy-graph Python variant --- including a
+coarse whole-FFN split whose CPU portion waited on attention --- lost. The
+lesson generalizes: \textbf{lazy-graph frameworks cannot exploit
+intra-operator heterogeneous parallelism without eager boundaries}, an
+API-level consideration for any unified-memory array framework.
+
+\section{Prefill Co-Execution Design}
+\label{sec:design}
+
+\textbf{Per-layer split.} Every linear-layer matmul in a decoder block
+(QKV/output projections; gate/up/down or FC layers) is row-split: the first
+$\rho M$ rows execute on the CPU stream, the remainder on the GPU stream,
+concatenated afterward. Attention score/softmax/value math stays on the GPU.
+Each split is preceded by an eager boundary per Section~\ref{sec:mechanism}.
+
+\textbf{Contention-aware calibration.} The ratio $\rho$ is selected per
+matmul shape by measuring the \emph{actual concurrent split} over a small
+candidate grid ($\rho \in \{0, 0.10, \dots, 0.50\}$), not by composing
+solo-unit throughputs: under co-execution, GPU throughput itself degrades
+(\x{13.2} $\rightarrow$ \x{15.5}\,$\mu$s/row on M1) because the units share
+bandwidth, so solo rates systematically overstate the optimal CPU share.
+Calibrated optima fall at $\rho \approx 0.25$--$0.40$ across chips.
+
+\textbf{No-regression gate.} A runtime controller treats \{split,
+compiled-baseline, eager-baseline\} as competing execution modes: a short
+probation picks the fastest, and the inactive modes are re-probed
+periodically (every 10th call, exponential-moving-average tracking, 3\%
+switching hysteresis). Because the stock execution path is itself an arm,
+the floor is the baseline minus bounded probe overhead ($\le$3\% on the
+smallest cells we measure, $<$1\% typically). The eager-baseline arm is
+necessary: \texttt{mx.compile}d execution --- \sys's original default ---
+itself loses $\sim$6\% to eager MLX at sequence length 8192, so a gate over
+\{split, compiled\} alone has no true floor.
+
+\section{Evaluation}
+\label{sec:eval}
+
+\subsection{Setup and fairness protocol}
+\label{sec:setup}
+
+\textbf{Machines.} Five chips across three generations, four of them run by
+community contributors from the public repository: M1 (8\,GB, fanless
+MacBook Air), M2 (8\,GB), M3~Pro (18\,GB), M4 (24\,GB), M4~Pro (24\,GB); all
+on mains power.
+
+\textbf{Protocol.} All comparisons are precision-matched (FP16 vs.\ FP16) and
+measured \emph{adjacently} (baseline and treatment interleaved in the same
+session, one process at a time, cooldowns between subprocesses). $n{=}50$
+timed runs after 10 warmups per cell (full-depth: $n{=}10$/3). Every result
+JSON embeds hardware identity, power source, battery level, thermal notes,
+and free memory at start; one contributed run that violated the memory
+requirement (a 15.6\,GB model resident in 1.8\,GB) was detected from these
+fields and excluded, and the harness now refuses such runs. Split outputs
+are verified against GPU-only execution (max relative error
+$\le 3{\times}10^{-3}$ at FP16 accumulation, $\le 3.9{\times}10^{-3}$
+through 32 blocks).
+
+\subsection{Block-level prefill across five chips}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/fig_fivechip.pdf}
+\caption{Llama-3-8B-geometry decoder-block prefill: per-layer split speedup
+over precision-matched MLX-FP16, five chips, seq.\ 1024--8192. Every
+actively-cooled chip wins at every length; the fanless 8\,GB M1 fades at
+8192 under memory pressure and thermal throttling.}
+\label{fig:fivechip}
+\end{figure}
+
+Figure~\ref{fig:fivechip}: the split wins \x{1.15}--\x{1.38} on Llama-shaped
+blocks on every chip with active cooling, replicated across independent
+sessions ($\pm 0.06$ across two sessions on M4). Two honest qualifications.
+First, GPT-2-shaped blocks ($d{=}1600$) win less (\x{1.02}--\x{1.18}) and are
+noise-sensitive on 8\,GB machines at short sequence lengths --- short CPU
+chunks are hypersensitive to scheduler and thermal state. Second, we
+predicted win magnitude would track the chip's CPU:GPU core ratio; the
+prediction \emph{partially failed} (M2 outperforms M4; M3~Pro trails both),
+and we report magnitude as chip-dependent. The robust cross-chip claim is
+the consistency of the win, not a single-variable law.
+
+\subsection{Full model depth}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.5\linewidth]{figures/fig_fulldepth.pdf}
+\caption{Single block vs.\ 32 stacked blocks (15.6\,GB FP16 weights), M4
+24\,GB. Depth does not erode the win.}
+\label{fig:fulldepth}
+\end{figure}
+
+Stacking 32 blocks (15.6\,GB of weights, per-block eager boundaries) leaves
+the win essentially unchanged (Figure~\ref{fig:fulldepth}: \x{1.12}/\x{1.24}/
+\x{1.20} at 2048/4096/8192 vs.\ \x{1.17}/\x{1.25}/\x{1.17} single-block).
+Per-layer synchronization cost does not compound with depth, and correctness
+holds through the full stack.
+
+\subsection{End-to-end: real checkpoint, real runner}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/fig_ttft.pdf}
+\caption{Time-to-first-token speedup for Qwen2.5-7B-Instruct (bf16) served
+through stock MLX-LM with \sys's split patched into \texttt{nn.Linear}
+(prefill-scale calls only; untuned fixed $\rho{=}0.30$). Greedy decoding;
+decode throughput unchanged (7.1$\rightarrow$7.1 tok/s on M4,
+13.4$\rightarrow$13.5 on M4 Pro).}
+\label{fig:ttft}
+\end{figure}
+
+We patch MLX-LM's \texttt{nn.Linear} so that large-row (prefill) calls use
+the split and decode calls (single-row) fall through untouched, and serve
+Qwen2.5-7B-Instruct-bf16 with greedy decoding. TTFT improves
+\x{1.18}--\x{1.25} across 2k/4k/8k-token prompts on both 24\,GB machines
+(Figure~\ref{fig:ttft}); decode throughput is exactly neutral, as designed.
+Outputs are token-identical to stock in 5 of 6 configurations; in the sixth,
+generation diverged at one near-tie token after 289 identical characters ---
+FP16 reduction-order sensitivity, with both completions coherent. Verbatim
+prompt/response transcripts for every run ship with the repository. TTFT is
+the latency that dominates prefill-heavy workloads (RAG, document QA,
+long-prompt/short-answer), which is precisely the regime this mechanism
+targets.
+
+\subsection{The gate, and the observer effect}
+\label{sec:gate}
+
+In-regime, the gate behaves as constructed: on M4 it holds
+$\ge$\x{1.0} in every cell, riding the split where it wins and standing down
+to baseline where it does not (e.g., \x{0.98} worst-case on a 15\,ms cell
+where probe overhead is proportionally largest). Out of regime it taught us
+something better than success. On the 8\,GB M1 at sequence length 8192 ---
+where three execution modes' buffers cannot co-reside --- the gate correctly
+selected the fastest mode \emph{by its own measurements} and still lost:
+each probe of an inactive mode evicted the active mode's working set,
+inflating the probe's reading $\sim$\x{1.4} above that mode's true
+fresh-process latency and imposing $\sim$\x{1.7} reload cost on the next
+active call. A periodically-probing scheduler under memory pressure cannot
+observe its alternatives without damaging both the measurement and the
+system. The practical rule we adopt: continuous probing only where working
+sets co-fit; probation-then-lock with drift-triggered (not scheduled)
+re-probing otherwise.
+
+\section{Boundaries: Where Co-Execution Cannot Help}
+\label{sec:boundaries}
+
+\textbf{Decode.} Each decoded token streams the full weight set through the
+memory system once; decode is bandwidth-bound, and unified memory means the
+bandwidth is \emph{shared}. Co-execution adds compute, not bandwidth, so no
+intra-operator split can accelerate decode on this architecture --- confirmed
+by our decode-neutral end-to-end measurements. The idle-unit opportunity
+during decode is speculative decoding with a CPU/ANE-hosted draft model,
+which spends idle \emph{compute} to save \emph{bandwidth per accepted token};
+we leave it to future work.
+
+\textbf{Training (a retired claim).} \sys's earlier training ``wins''
+(\x{1.13}--\x{1.35}) were measured against FP32 baselines while computing in
+FP16. Precision-matched, single-block training loses on \emph{all five
+chips} (\x{0.86}--\x{0.97}), with finite losses verified. We report this as
+the strongest honest negative in the paper and a caution for the literature:
+of the headline comparisons we began with, every one that mixed precisions
+reversed or vanished when matched.
+
+\textbf{Neural Engine.} ANE is reachable only through CoreML, whose dispatch
+costs $\sim$20--24\,ms fixed plus $\sim$7\,$\mu$s/row regardless of chip
+generation (measured M1 through M4~Pro) --- useless at layer granularity
+where matmuls take 2--20\,ms, though it amortizes at batch scale, where our
+contention-aware three-way search reached \x{1.61}--\x{1.79} burst
+(\x{1.16}--\x{1.29} sustained) on raw FFN-shaped matmuls. Three
+deterministic CoreML/MLX coexistence crashes we isolated on macOS~25.x
+(e.g., loading a second distinct compiled shape segfaults the process) are
+fixed in macOS~26.3 --- verified by rerunning our minimal repros on two
+machines --- but the dispatch overhead stands, and ANE weight-baking costs
+1.4\% relative error on routed rows.
+
+\textbf{Workload shape.} Co-execution is not universal even at batch scale:
+a blocked Cholesky whose trailing update is SYRK-shaped never beat CPU-only
+Accelerate BLAS (\x{0.90}--\x{0.95}) --- when a single unit's specialized
+path already saturates the bottleneck resource, adding units only adds
+contention.
+
+\textbf{Thermal envelope.} On the one passively-cooled machine, sustained
+load reduces every speedup (burst \x{1.79} $\rightarrow$ sustained
+\x{1.16}--\x{1.29} on raw matmuls) and small-shape results become
+session-dependent; we therefore report cold/hot states separately and treat
+fanless chassis as the motivating case for runtime adaptivity rather than a
+reliable benchmark platform.
+
+\section{Limitations}
+
+Our transformer measurements use decoder-block geometries with synthetic
+weights for controlled experiments (latency is weight-value-independent;
+correctness is separately verified) and one real 7B checkpoint end-to-end;
+broader model coverage (MoE, multimodal) is future work. The mechanism
+analysis is specific to MLX's scheduler, though we expect the eager-boundary
+requirement to generalize to any lazily-evaluated framework with device
+streams. Ratios in the end-to-end experiment are untuned ($\rho{=}0.30$
+fixed); per-shape calibration should widen the reported TTFT wins. Batch
+serving throughput --- where raw-matmul results suggest the largest
+headroom --- is measured at the operator level but not yet end-to-end.
+
+\section{Conclusion}
+
+On unified-memory SoCs, intra-operator CPU+GPU co-execution is neither a
+myth nor a free lunch: it is a prefill-scoped mechanism, gated by an
+eager-boundary scheduling requirement that lazy-graph frameworks violate by
+default, bounded by shared bandwidth in decode, by dispatch overhead on the
+ANE, and by working-set co-residency for any scheduler that probes its
+alternatives. Within its regime it is real, replicated, and free: up to
+\x{1.38} block-level and \x{1.25} end-to-end TTFT on stock MLX-LM with
+token-identical outputs. We hope the fairness protocol --- precision-matched
+adjacent baselines, environment-stamped raw results, and retired claims
+reported alongside surviving ones --- is as useful to the community as the
+mechanism itself.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

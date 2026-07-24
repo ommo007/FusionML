@@ -1,0 +1,48 @@
+\begin{thebibliography}{1}
+
+\bibitem{sarathi2023}
+Amey Agrawal, Ashish Panwar, Jayashree Mohan, Nipun Kwatra, Bhargav~S.
+  Gulavani, and Ramachandran Ramjee.
+\newblock {SARATHI}: Efficient {LLM} inference by piggybacking decodes with
+  chunked prefills, 2023.
+
+\bibitem{chen2023}
+Charlie Chen, Sebastian Borgeaud, Geoffrey Irving, Jean-Baptiste Lespiau,
+  Laurent Sifre, and John Jumper.
+\newblock Accelerating large language model decoding with speculative sampling,
+  2023.
+
+\bibitem{dao2022}
+Tri Dao, Daniel~Y. Fu, Stefano Ermon, Atri Rudra, and Christopher R{\'e}.
+\newblock {FlashAttention}: Fast and memory-efficient exact attention with
+  {IO}-awareness.
+\newblock In {\em Advances in Neural Information Processing Systems (NeurIPS)},
+  2022.
+
+\bibitem{mlx2023}
+Awni Hannun, Jagrit Digani, Angelos Katharopoulos, and Ronan Collobert.
+\newblock {MLX}: Efficient and flexible machine learning on apple silicon.
+\newblock \url{https://github.com/ml-explore/mlx}, 2023.
+
+\bibitem{codl2022}
+Fucheng Jia, Deyu Zhang, Ting Cao, Shiqi Jiang, Yunxin Liu, Ju~Ren, and Yaoxue
+  Zhang.
+\newblock {CoDL}: Efficient {CPU-GPU} co-execution for deep learning inference
+  on mobile devices.
+\newblock In {\em Proceedings of the 20th Annual International Conference on
+  Mobile Systems, Applications and Services (MobiSys)}, 2022.
+
+\bibitem{leviathan2023}
+Yaniv Leviathan, Matan Kalman, and Yossi Matias.
+\newblock Fast inference from transformers via speculative decoding.
+\newblock In {\em International Conference on Machine Learning (ICML)}, 2023.
+
+\bibitem{splitwise2024}
+Pratyush Patel, Esha Choukse, Chaojie Zhang, Aashaka Shah, {\'I}{\~n}igo Goiri,
+  Saeed Maleki, and Ricardo Bianchini.
+\newblock Splitwise: Efficient generative {LLM} inference using phase
+  splitting.
+\newblock In {\em ACM/IEEE 51st Annual International Symposium on Computer
+  Architecture (ISCA)}, 2024.
+
+\end{thebibliography}
