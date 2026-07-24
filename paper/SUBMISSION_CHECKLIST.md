@@ -54,10 +54,19 @@ Target plan (decided 2026-07-24):
    template (`mlsys2027.sty`, ICML-derived two-column), review platform
    (CMT or OpenReview — link will be in CFP).
 2. ~~Port to template~~ DONE — main.tex is already in official MLSys format
-   (mlsys2026.sty, 6 pages of the 10 allowed, incl. architecture + timeline
+   (mlsys2026.sty, 5 pages of the 10 allowed, incl. architecture + timeline
    TikZ figures). When mlsys2027.sty posts: rename the \usepackage and .bst
-   references (historically a year bump). Blind version = remove the
-   `[accepted]` option from `\usepackage[accepted]{mlsys2026}`.
+   references (historically a year bump).
+
+   **main.tex as committed is the arXiv variant** (real name, no venue
+   notice, no public email — see the file's header comment). Before
+   submitting to MLSys, make a copy and apply the swap described there:
+   - Blind submission: drop `[accepted]`, drop the
+     `\renewcommand{\printAffiliationsAndNotice}` override (restores the
+     stock "Preliminary work. Under review..." notice + author
+     anonymization).
+   - Camera-ready (if accepted): keep `[accepted]`, drop the same override,
+     add back `\mlsyscorrespondingauthor{Om Mohite}{<email>}`.
 3. **Anonymize (double-blind)**:
    - Remove author block.
    - Replace github.com/ommo007/FusionML with an **anonymous mirror**

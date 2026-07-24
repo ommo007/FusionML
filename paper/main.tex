@@ -2,10 +2,23 @@
 % Built on the official MLSys 2026 style (mlsys2026.sty); swap to
 % mlsys2027.sty when the MLSys 2027 CFP posts (historically a year bump).
 %
-% arXiv/preprint mode: \usepackage[accepted]{mlsys2026} (shows authors).
-% MLSys double-blind submission: remove the [accepted] option — the style
-% file anonymizes automatically. Also see SUBMISSION_CHECKLIST.md for
-% repo-link anonymization.
+% THIS FILE IS THE ARXIV PREPRINT VARIANT — real author name, no venue
+% claim (unpublished), no public email. Below the \usepackage line, a
+% \renewcommand{\printAffiliationsAndNotice} suppresses the MLSys
+% "Proceedings of.../Copyright..." notice and the "Correspondence to:
+% <email>" line, leaving only the affiliation footnote. Do not carry that
+% override into the other two variants:
+%
+%   - MLSys BLIND SUBMISSION: remove the `[accepted]` option (anonymizes
+%     author/affiliation automatically) AND remove the
+%     \renewcommand{\printAffiliationsAndNotice}{...} override below, so
+%     the stock "Preliminary work. Under review by MLSys..." notice
+%     prints as MLSys expects for review copies. See SUBMISSION_CHECKLIST.md
+%     for repo-link anonymization.
+%   - MLSys CAMERA-READY (if accepted): keep `[accepted]`, remove the same
+%     override, and add back `\mlsyscorrespondingauthor{Om Mohite}{email}`
+%     — the proceedings notice and a correspondence email are expected in
+%     the published version.
 
 \documentclass{article}
 
@@ -19,6 +32,24 @@
 \newcommand{\theHalgorithm}{\arabic{algorithm}}
 
 \usepackage[accepted]{mlsys2026}   % remove [accepted] for blind submission
+
+% arXiv preprint front matter: no venue/copyright claim (unpublished), no
+% correspondence email on the public PDF — affiliation footnote only, with
+% no residual blank line where the notice used to sit.
+\makeatletter
+\renewcommand{\printAffiliationsAndNotice}[1]{%
+\stepcounter{@affiliationcounter}%
+{\let\thefootnote\relax\footnotetext{\hspace*{-\footnotesep}%
+\forloop{@affilnum}{1}{\value{@affilnum} < \value{@affiliationcounter}}{%
+\textsuperscript{\arabic{@affilnum}}\ifcsname @affilname\the@affilnum\endcsname%
+\csname @affilname\the@affilnum\endcsname%
+\else
+{\bf AUTHORERR: Missing \textbackslash{}mlsysaffiliation.}%
+\fi
+}.%
+}}%
+}
+\makeatother
 
 \newcommand{\sys}{FusionML}
 \newcommand{\x}[1]{$#1\times$}
@@ -43,8 +74,6 @@ CPU+GPU Co-Execution on Unified-Memory Apple Silicon}
 \end{mlsysauthorlist}
 
 \mlsysaffiliation{ind}{Independent Researcher, Mumbai, India}
-
-\mlsyscorrespondingauthor{Om Mohite}{om.mohite@vit.edu.in}
 
 \mlsyskeywords{Machine Learning, Systems, Apple Silicon, Unified Memory,
 Heterogeneous Computing, LLM Inference, Prefill}
