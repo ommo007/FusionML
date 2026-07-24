@@ -28,7 +28,7 @@ plt.rcParams.update({
 })
 
 CHIPS = [
-    ("Apple_M1_8GB_8CPU_7GPU_16ANE", "M1 8GB\n(fanless)", C["gray"]),
+    ("Apple_M1_8GB_8CPU_7GPU_16ANE", "M1 8GB", C["gray"]),
     ("Apple_M2_8GB_8CPU_8GPU_16ANE", "M2 8GB", C["sky"]),
     ("Apple_M3_Pro_18GB_11CPU_14GPU_18ANE", "M3 Pro 18GB", C["green"]),
     ("Apple_M4_24GB_10CPU_10GPU_16ANE", "M4 24GB", C["blue"]),
@@ -62,7 +62,11 @@ ax.set_xticks(xs, [f"{s}" for s in SEQS])
 ax.set_xlabel("Prefill sequence length (tokens)")
 ax.set_ylabel("Speedup vs. MLX-FP16")
 ax.set_ylim(0.9, 1.45)
-ax.legend(ncol=3, fontsize=7, frameon=False, loc="upper left")
+# ncol=5 keeps all five chips on one row in generation order (matplotlib's
+# default legend fill is column-major, which scrambles a 3x2 grid's reading
+# order); single row reads left-to-right exactly as the chips are grouped.
+ax.legend(ncol=5, fontsize=6.3, frameon=False, loc="upper left",
+          columnspacing=0.9, handletextpad=0.4, handlelength=1.3)
 fig.savefig(os.path.join(OUT, "fig_fivechip.pdf"))
 plt.close(fig)
 

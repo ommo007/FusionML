@@ -1,24 +1,25 @@
-%%%%%%%% FusionML — MLSys-format draft %%%%%%%%
+%%%%%%%% FusionML: MLSys-format draft %%%%%%%%
 % Built on the official MLSys 2026 style (mlsys2026.sty); swap to
 % mlsys2027.sty when the MLSys 2027 CFP posts (historically a year bump).
 %
-% THIS FILE IS THE ARXIV PREPRINT VARIANT — real author name, no venue
-% claim (unpublished), no public email. Below the \usepackage line, a
-% \renewcommand{\printAffiliationsAndNotice} suppresses the MLSys
-% "Proceedings of.../Copyright..." notice and the "Correspondence to:
-% <email>" line, leaving only the affiliation footnote. Do not carry that
-% override into the other two variants:
+% THIS FILE IS THE ARXIV PREPRINT VARIANT: real author name, no venue
+% claim (unpublished), no public email, affiliation printed directly below
+% the author name (not the multi-affiliation footnote system MLSys uses
+% for author lists). Two other variants are needed later, described where
+% the byline block is built below:
 %
 %   - MLSys BLIND SUBMISSION: remove the `[accepted]` option (anonymizes
-%     author/affiliation automatically) AND remove the
-%     \renewcommand{\printAffiliationsAndNotice}{...} override below, so
-%     the stock "Preliminary work. Under review by MLSys..." notice
-%     prints as MLSys expects for review copies. See SUBMISSION_CHECKLIST.md
-%     for repo-link anonymization.
-%   - MLSys CAMERA-READY (if accepted): keep `[accepted]`, remove the same
-%     override, and add back `\mlsyscorrespondingauthor{Om Mohite}{email}`
-%     — the proceedings notice and a correspondence email are expected in
-%     the published version.
+%     author/affiliation automatically) and use the package's own
+%     \mlsysauthorlist / \mlsysaffiliation / \printAffiliationsAndNotice
+%     machinery instead of the manual byline, so the stock "Preliminary
+%     work. Under review by MLSys..." notice prints as MLSys expects for
+%     review copies. See SUBMISSION_CHECKLIST.md for repo-link
+%     anonymization.
+%   - MLSys CAMERA-READY (if accepted): keep `[accepted]`, restore the
+%     package's own author/affiliation/notice machinery, and add
+%     `\mlsyscorrespondingauthor{Om Mohite}{email}`: the proceedings
+%     notice and a correspondence email are expected in the published
+%     version.
 
 \documentclass{article}
 
@@ -32,24 +33,6 @@
 \newcommand{\theHalgorithm}{\arabic{algorithm}}
 
 \usepackage[accepted]{mlsys2026}   % remove [accepted] for blind submission
-
-% arXiv preprint front matter: no venue/copyright claim (unpublished), no
-% correspondence email on the public PDF — affiliation footnote only, with
-% no residual blank line where the notice used to sit.
-\makeatletter
-\renewcommand{\printAffiliationsAndNotice}[1]{%
-\stepcounter{@affiliationcounter}%
-{\let\thefootnote\relax\footnotetext{\hspace*{-\footnotesep}%
-\forloop{@affilnum}{1}{\value{@affilnum} < \value{@affiliationcounter}}{%
-\textsuperscript{\arabic{@affilnum}}\ifcsname @affilname\the@affilnum\endcsname%
-\csname @affilname\the@affilnum\endcsname%
-\else
-{\bf AUTHORERR: Missing \textbackslash{}mlsysaffiliation.}%
-\fi
-}.%
-}}%
-}
-\makeatother
 
 \newcommand{\sys}{FusionML}
 \newcommand{\x}[1]{$#1\times$}
@@ -66,14 +49,12 @@
 \begin{document}
 
 \twocolumn[
-\mlsystitle{\sys{}: Prefill, Not Decode --- Mechanism and Boundaries of
+\mlsystitle{\sys{}: Prefill, Not Decode: Mechanism and Boundaries of
 CPU+GPU Co-Execution on Unified-Memory Apple Silicon}
 
-\begin{mlsysauthorlist}
-\mlsysauthor{Om Mohite}{ind}
-\end{mlsysauthorlist}
-
-\mlsysaffiliation{ind}{Independent Researcher, Mumbai, India}
+\centerline{\large\bf Om Mohite}
+\vskip 4pt
+\centerline{Independent Researcher, Mumbai, India}
 
 \mlsyskeywords{Machine Learning, Systems, Apple Silicon, Unified Memory,
 Heterogeneous Computing, LLM Inference, Prefill}
@@ -81,39 +62,31 @@ Heterogeneous Computing, LLM Inference, Prefill}
 \vskip 0.3in
 ]
 
-\printAffiliationsAndNotice{}
-
 \begin{abstract}
-Apple-Silicon SoCs place CPU, GPU, and Neural Engine on one unified memory
-system, inviting the question of whether transformer inference can be
-accelerated by executing single operators cooperatively across units. Prior
-attempts (including our own) failed or produced precision-confounded wins.
-We identify the mechanism behind these failures: MLX, the platform's
-lazy-graph array framework, \emph{serializes} cross-stream work whenever a
-CPU-stream operation consumes an unmaterialized GPU result inside one
-evaluation graph --- a row-split matmul that runs \x{1.38} faster with
-materialized inputs runs \x{0.66} (slower than GPU-only) inside a lazy
-graph. Inserting an eager materialization boundary before each split
-restores true concurrency (\x{1.34}). Building on this, \sys{} implements
-per-layer, contention-aware CPU+GPU row splitting for transformer prefill,
-evaluated under a strict fairness protocol (precision-matched FP16
-baselines, adjacently measured, with power and thermal state recorded in
-every result). Across five chips spanning three Apple-Silicon generations,
-community-replicated, the split accelerates Llama-shaped decoder-block
-prefill by \x{1.15}--\x{1.38}; the win is unchanged at full 32-block model
-depth (15.6\,GB), and reaches end-to-end reality as \x{1.18}--\x{1.25}
-faster time-to-first-token for a real Qwen2.5-7B checkpoint served through
-stock MLX-LM, with token-identical outputs in 5 of 6 configurations and
-unchanged decode throughput. We characterize the boundaries with equal
-care: decode cannot benefit (it is bound by the \emph{shared} memory
-bandwidth co-execution does not add); single-block training loses
-\x{0.86}--\x{0.97} on all five chips once the baseline is
-precision-matched; Neural-Engine dispatch overhead ($\sim$20\,ms via
-CoreML) excludes it at layer granularity; and a runtime probing gate that
-guarantees no regression in-regime becomes \emph{destructively
-self-deceiving} under memory pressure, where probing an alternative
-execution mode evicts the active mode's working set and biases its own
-measurement. We release all code, raw results, and transcripts.
+Apple-Silicon SoCs share CPU, GPU, and Neural Engine over one unified
+memory system, raising the question of whether transformer inference can
+be accelerated by splitting single operators across units. Prior
+attempts, including our own, failed or produced precision-confounded
+wins. We identify the cause: MLX's lazy-graph scheduler
+\emph{serializes} cross-stream work whenever a CPU-stream operation
+consumes an unmaterialized GPU result inside one evaluation graph, so a
+row-split matmul that runs \x{1.38} faster with materialized inputs runs
+\x{0.66} slower than GPU-only inside a lazy graph; an eager
+materialization boundary restores concurrency (\x{1.34}). \sys{}
+implements a per-layer, contention-aware CPU+GPU row split for
+transformer prefill built on this fix. Evaluated across five chips and
+three Apple-Silicon generations, community-replicated, the split
+accelerates Llama-shaped decoder-block prefill by \x{1.15}--\x{1.38},
+unchanged at full 32-block depth, and reaches \x{1.18}--\x{1.25} faster
+time-to-first-token on a real Qwen2.5-7B checkpoint served through stock
+MLX-LM, with token-identical outputs and unchanged decode throughput. We
+characterize the boundaries equally carefully: decode cannot benefit,
+bound by shared bandwidth co-execution does not add; precision-matched
+training loses \x{0.86}--\x{0.97} on all five chips; ANE dispatch
+overhead excludes it at layer granularity; and a no-regression runtime
+gate becomes self-defeating under memory pressure, where probing an
+alternative mode evicts the active mode's working set. Code, raw
+results, and generation transcripts are released.
 \end{abstract}
 
 \section{Introduction}
@@ -121,8 +94,8 @@ measurement. We release all code, raw results, and transcripts.
 Unified-memory SoCs are now the dominant local-inference platform, and Apple
 Silicon is their most widely deployed instance. Because CPU, GPU, and Neural
 Engine (ANE) address the same physical memory, work can in principle be split
-\emph{within} a single operator --- rows of one matmul computed simultaneously
-on CPU and GPU --- without any copy. Whether this helps in practice has
+\emph{within} a single operator (rows of one matmul computed simultaneously
+on CPU and GPU) without any copy. Whether this helps in practice has
 remained unclear: published speedups in this space are frequently confounded
 (FP16 systems compared against FP32 baselines), and naive implementations
 lose outright.
@@ -166,9 +139,9 @@ eviction, with $\sim$\x{1.7} reload cost on the next call
 We highlight a methodological stance: every headline number in this paper is
 measured against a \emph{precision-matched} baseline executed adjacently on
 the same machine, and several of our own earlier ``wins'' are retired in
-Section~\ref{sec:boundaries} as FP16-vs-FP32 artifacts. Raw result files ---
+Section~\ref{sec:boundaries} as FP16-vs-FP32 artifacts. Raw result files,
 including power source, battery level, thermal notes, and free memory at run
-start --- accompany every experiment in the repository.
+start, accompany every experiment in the repository.
 
 \section{Background and Related Work}
 
@@ -241,16 +214,16 @@ Figure~\ref{fig:timeline} shows the probe that isolates the effect. When
 both stream branches read an already-materialized array, MLX executes them
 concurrently and the split delivers the expected win (\x{1.38}). When the
 same split consumes the output of a GPU operation \emph{within the same
-evaluation graph} --- the situation of every layer after the first in any
-real network --- execution serializes and the split is strictly worse than
+evaluation graph} (the situation of every layer after the first in any
+real network), execution serializes and the split is strictly worse than
 doing nothing (\x{0.66}). An explicit materialization boundary
 (\texttt{mx.eval} on the input) before the split restores concurrency at
 negligible cost (\x{1.34}).
 
 This single scheduling property explains a striking prior split within our
 own project: an eager, per-layer Swift implementation showed consistent
-co-execution wins while every lazy-graph Python variant --- including a
-coarse whole-FFN split whose CPU portion waited on attention --- lost. The
+co-execution wins while every lazy-graph Python variant, including a
+coarse whole-FFN split whose CPU portion waited on attention, lost. The
 lesson generalizes: \textbf{lazy-graph frameworks cannot exploit
 intra-operator heterogeneous parallelism without eager boundaries}, an
 API-level consideration for any unified-memory array framework.
@@ -282,11 +255,11 @@ API-level consideration for any unified-memory array framework.
 \node[right=1mm of lg] (lgt) {GPU-only};
 \node[split, right=2.5mm of lgt] (ls) {\ \ };
 \node[right=1mm of ls] {row-split (CPU$\|$GPU), eager boundary before each};
-% magnified split linear
-\begin{scope}[shift={(1.1,-2.35)}]
+% magnified split linear (shifted well clear of the legend row above it)
+\begin{scope}[shift={(1.1,-2.85)}]
 \draw[decorate,decoration={brace,mirror,amplitude=3pt}]
-  (2.05,1.42) -- (0.6,1.42);
-\node at (1.3,1.05) {one split linear};
+  (2.05,1.62) -- (0.6,1.62);
+\node at (1.3,1.25) {one split linear};
 \draw (0,0) rectangle (0.9,0.9);
 \draw[fill=oiorange!30] (0,0.62) rectangle (0.9,0.9);
 \node at (0.45,0.76) {$\rho M$};
@@ -299,7 +272,7 @@ API-level consideration for any unified-memory array framework.
 \draw[flow] (0.9,0.18) -- (gpub);
 \draw[flow] (cpu) -- (cat);
 \draw[flow] (gpub) -- (cat);
-\draw[very thick, oiverm] (1.15,-0.15) -- (1.15,1.05);
+\draw[very thick, oiverm] (1.15,-0.15) -- (1.15,1.0);
 \node[oiverm, anchor=west] at (0.75,-0.38) {\texttt{mx.eval}};
 \end{scope}
 \end{tikzpicture}
@@ -332,7 +305,7 @@ periodically (every 10th call, exponential-moving-average tracking, 3\%
 switching hysteresis). Because the stock execution path is itself an arm,
 the floor is the baseline minus bounded probe overhead ($\le$3\% on the
 smallest cells we measure, $<$1\% typically). The eager-baseline arm is
-necessary: \texttt{mx.compile}d execution --- \sys's original default ---
+necessary: \texttt{mx.compile}d execution (\sys's original default)
 itself loses $\sim$6\% to eager MLX at sequence length 8192, so a gate over
 \{split, compiled\} alone has no true floor.
 
@@ -375,7 +348,7 @@ Figure~\ref{fig:fivechip}: the split wins \x{1.15}--\x{1.38} on Llama-shaped
 blocks on every chip with active cooling, replicated across independent
 sessions ($\pm 0.06$ across two sessions on M4). Two honest qualifications.
 First, GPT-2-shaped blocks ($d{=}1600$) win less (\x{1.02}--\x{1.18}) and
-are noise-sensitive on 8\,GB machines at short sequence lengths --- short
+are noise-sensitive on 8\,GB machines at short sequence lengths: short
 CPU chunks are hypersensitive to scheduler and thermal state. Second, we
 predicted win magnitude would track the chip's CPU:GPU core ratio; the
 prediction \emph{partially failed} (M2 outperforms M4; M3~Pro trails both),
@@ -418,7 +391,7 @@ Qwen2.5-7B-Instruct-bf16 with greedy decoding. TTFT improves
 (Figure~\ref{fig:ttft}); decode throughput is exactly neutral, as designed.
 Outputs are token-identical to stock in 5 of 6 configurations; in the
 sixth, generation diverged at one near-tie token after 289 identical
-characters --- FP16 reduction-order sensitivity, with both completions
+characters, due to FP16 reduction-order sensitivity, with both completions
 coherent. Verbatim prompt/response transcripts for every run ship with the
 repository. TTFT is the latency that dominates prefill-heavy workloads
 (RAG, document QA, long-prompt/short-answer), which is precisely the regime
@@ -431,8 +404,8 @@ In-regime, the gate behaves as constructed: on M4 it holds $\ge$\x{1.0} in
 every cell, riding the split where it wins and standing down to baseline
 where it does not (e.g., \x{0.98} worst-case on a 15\,ms cell where probe
 overhead is proportionally largest). Out of regime it taught us something
-better than success. On the 8\,GB M1 at sequence length 8192 --- where
-three execution modes' buffers cannot co-reside --- the gate correctly
+better than success. On the 8\,GB M1 at sequence length 8192, where
+three execution modes' buffers cannot co-reside, the gate correctly
 selected the fastest mode \emph{by its own measurements} and still lost:
 each probe of an inactive mode evicted the active mode's working set,
 inflating the probe's reading $\sim$\x{1.4} above that mode's true
@@ -449,8 +422,8 @@ re-probing otherwise.
 \textbf{Decode.} Each decoded token streams the full weight set through the
 memory system once; decode is bandwidth-bound, and unified memory means the
 bandwidth is \emph{shared}. Co-execution adds compute, not bandwidth, so no
-intra-operator split can accelerate decode on this architecture ---
-confirmed by our decode-neutral end-to-end measurements. The idle-unit
+intra-operator split can accelerate decode on this architecture, confirmed
+by our decode-neutral end-to-end measurements. The idle-unit
 opportunity during decode is speculative decoding with a CPU/ANE-hosted
 draft model, which spends idle \emph{compute} to save \emph{bandwidth per
 accepted token}; we leave it to future work.
@@ -465,19 +438,19 @@ precisions reversed or vanished when matched.
 
 \textbf{Neural Engine.} ANE is reachable only through CoreML, whose
 dispatch costs $\sim$20--24\,ms fixed plus $\sim$7\,$\mu$s/row regardless
-of chip generation (measured M1 through M4~Pro) --- useless at layer
+of chip generation (measured M1 through M4~Pro), useless at layer
 granularity where matmuls take 2--20\,ms, though it amortizes at batch
 scale, where our contention-aware three-way search reached
 \x{1.61}--\x{1.79} burst (\x{1.16}--\x{1.29} sustained) on raw FFN-shaped
 matmuls. Three deterministic CoreML/MLX coexistence crashes we isolated on
 macOS~25.x (e.g., loading a second distinct compiled shape segfaults the
-process) are fixed in macOS~26.3 --- verified by rerunning our minimal
-repros on two machines --- but the dispatch overhead stands, and ANE
+process) are fixed in macOS~26.3, verified by rerunning our minimal
+repros on two machines, but the dispatch overhead stands, and ANE
 weight-baking costs 1.4\% relative error on routed rows.
 
 \textbf{Workload shape.} Co-execution is not universal even at batch scale:
 a blocked Cholesky whose trailing update is SYRK-shaped never beat CPU-only
-Accelerate BLAS (\x{0.90}--\x{0.95}) --- when a single unit's specialized
+Accelerate BLAS (\x{0.90}--\x{0.95}): when a single unit's specialized
 path already saturates the bottleneck resource, adding units only adds
 contention.
 
@@ -498,8 +471,8 @@ analysis is specific to MLX's scheduler, though we expect the
 eager-boundary requirement to generalize to any lazily-evaluated framework
 with device streams. Ratios in the end-to-end experiment are untuned
 ($\rho{=}0.30$ fixed); per-shape calibration should widen the reported TTFT
-wins. Batch serving throughput --- where raw-matmul results suggest the
-largest headroom --- is measured at the operator level but not yet
+wins. Batch serving throughput, where raw-matmul results suggest the
+largest headroom, is measured at the operator level but not yet
 end-to-end.
 
 \section{Conclusion}
@@ -511,10 +484,10 @@ default, bounded by shared bandwidth in decode, by dispatch overhead on the
 ANE, and by working-set co-residency for any scheduler that probes its
 alternatives. Within its regime it is real, replicated, and free: up to
 \x{1.38} block-level and \x{1.25} end-to-end TTFT on stock MLX-LM with
-token-identical outputs. We hope the fairness protocol ---
-precision-matched adjacent baselines, environment-stamped raw results, and
-retired claims reported alongside surviving ones --- is as useful to the
-community as the mechanism itself.
+token-identical outputs. We hope the fairness protocol, precision-matched
+adjacent baselines, environment-stamped raw results, and retired claims
+reported alongside surviving ones, is as useful to the community as the
+mechanism itself.
 
 \section*{Acknowledgments}
 Community contributors ran the M2, M3~Pro, M4~Pro, and portions of the M4
